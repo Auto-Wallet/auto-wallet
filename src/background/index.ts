@@ -6,6 +6,8 @@ import * as tokenManager from '../lib/token-manager';
 import * as txLogger from '../lib/tx-logger';
 import { handleRpcMethod } from './rpc-handler';
 import { handlePopupAction } from './popup-handler';
+import './unlock-manager'; // register unlock message listener
+import './confirm-manager'; // register confirm message listener
 
 // --- Message listener ---
 

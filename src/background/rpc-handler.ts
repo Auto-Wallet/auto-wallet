@@ -11,6 +11,7 @@ import * as txLogger from '../lib/tx-logger';
 import * as tokenManager from '../lib/token-manager';
 import { genId } from '../types/messages';
 import { requestUserConfirmation } from './confirm-manager';
+import { requestUnlock } from './unlock-manager';
 
 // --- RPC Method Router ---
 
@@ -23,6 +24,7 @@ export async function handleRpcMethod(
   switch (method) {
     // --- Account methods ---
     case 'eth_requestAccounts':
+      return handleRequestAccounts(origin);
     case 'eth_accounts':
       return handleAccounts();
 
@@ -67,6 +69,25 @@ export async function handleRpcMethod(
 
 function handleAccounts(): string[] {
   if (!keyManager.isUnlocked()) return [];
+  return [keyManager.getAddress()];
+}
+
+async function handleRequestAccounts(origin: string): Promise<string[]> {
+  // If already unlocked, return accounts directly
+  if (keyManager.isUnlocked()) return [keyManager.getAddress()];
+
+  // Check if wallet exists
+  const hasWallet = await keyManager.hasWallet();
+  if (!hasWallet) return [];
+
+  // Wallet is locked — prompt user to unlock
+  const unlocked = await requestUnlock(origin);
+  if (!unlocked || !keyManager.isUnlocked()) {
+    const err = new Error('User rejected the connection request');
+    (err as any).code = 4001;
+    throw err;
+  }
+
   return [keyManager.getAddress()];
 }
 

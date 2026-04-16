@@ -32,6 +32,22 @@ await buildEntry('src/content/index.ts', 'content.js');
 await buildEntry('src/content/inpage.ts', 'inpage.js');
 await buildEntry('src/popup/index.tsx', 'popup.js');
 await buildEntry('src/confirm/index.tsx', 'confirm.js');
+await buildEntry('src/unlock/index.tsx', 'unlock-page.js');
+
+// Unlock HTML (dApp-triggered unlock popup)
+writeFileSync(join(DIST, 'unlock.html'), `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Unlock - Auto Wallet</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <div id="root"></div>
+  <script src="unlock-page.js"></script>
+</body>
+</html>`);
 
 // Confirm HTML (transaction approval popup)
 writeFileSync(join(DIST, 'confirm.html'), `<!DOCTYPE html>
