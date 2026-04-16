@@ -16,14 +16,16 @@ function ConfirmPage() {
   const [addToWhitelist, setAddToWhitelist] = useState(false);
 
   useEffect(() => {
+    // Read request data from chrome.storage.session instead of URL query string
     const params = new URLSearchParams(window.location.search);
-    const data = params.get('data');
-    if (data) {
-      try {
-        setRequest(JSON.parse(decodeURIComponent(data)));
-      } catch (e) {
-        console.error('Failed to parse request data');
-      }
+    const requestId = params.get('id');
+    if (requestId) {
+      const key = `confirm_${requestId}`;
+      chrome.storage.session.get(key, (result) => {
+        if (result[key]) {
+          setRequest(result[key]);
+        }
+      });
     }
   }, []);
 

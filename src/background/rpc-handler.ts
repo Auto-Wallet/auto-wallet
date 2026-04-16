@@ -1,6 +1,4 @@
 import {
-  createWalletClient,
-  http,
   toHex,
   hexToBigInt,
 } from 'viem';
@@ -14,6 +12,11 @@ import { requestUserConfirmation } from './confirm-manager';
 import { requestUnlock } from './unlock-manager';
 import { notifyTx, notifySign } from '../lib/notify';
 import { emitChainChanged } from './events';
+import { RpcError, userRejection } from '../lib/rpc-error';
+
+// --- Rate limiting for eth_requestAccounts ---
+let lastUnlockPromptTime = 0;
+const UNLOCK_PROMPT_COOLDOWN_MS = 3000; // 3 seconds between unlock popups
 
 // --- RPC Method Router ---
 
@@ -48,8 +51,6 @@ export async function handleRpcMethod(
       return handleSendTransaction(params, origin);
 
     case 'personal_sign':
-      return handlePersonalSign(params, origin);
-
     case 'eth_sign':
       return handlePersonalSign(params, origin);
 
@@ -82,12 +83,17 @@ async function handleRequestAccounts(origin: string): Promise<string[]> {
   const hasWallet = await keyManager.hasWallet();
   if (!hasWallet) return [];
 
+  // Rate limit: prevent malicious dApps from spamming unlock popups
+  const now = Date.now();
+  if (now - lastUnlockPromptTime < UNLOCK_PROMPT_COOLDOWN_MS) {
+    throw userRejection('Too many connection requests, please wait');
+  }
+  lastUnlockPromptTime = now;
+
   // Wallet is locked — prompt user to unlock
   const unlocked = await requestUnlock(origin);
   if (!unlocked || !(await keyManager.isUnlocked())) {
-    const err = new Error('User rejected the connection request');
-    (err as any).code = 4001;
-    throw err;
+    throw userRejection('User rejected the connection request');
   }
 
   return [await keyManager.getAddress()];
@@ -122,9 +128,7 @@ async function handleAddChain(params: unknown[], origin: string): Promise<null> 
   const rpcUrl = p.rpcUrls?.[0];
   if (!rpcUrl) throw new Error('No RPC URL provided');
   if (!rpcUrl.startsWith('https://') && !rpcUrl.startsWith('http://localhost')) {
-    const err = new Error('Only HTTPS RPC URLs are allowed');
-    (err as any).code = 4001;
-    throw err;
+    throw userRejection('Only HTTPS RPC URLs are allowed');
   }
 
   // SECURITY: Require user confirmation before adding unknown chain
@@ -140,9 +144,7 @@ async function handleAddChain(params: unknown[], origin: string): Promise<null> 
     }],
   });
   if (!approved) {
-    const err = new Error('User rejected adding the network');
-    (err as any).code = 4001;
-    throw err;
+    throw userRejection('User rejected adding the network');
   }
 
   await networkManager.addCustomNetwork({
@@ -159,64 +161,85 @@ async function handleAddChain(params: unknown[], origin: string): Promise<null> 
   return null;
 }
 
+// --- Common signing flow: whitelist check + confirm popup ---
+
+async function checkWhitelistOrConfirm(
+  method: string,
+  origin: string,
+  params: unknown[],
+  ctx: { to: string | null; data: string | null; value: string; gasLimit: string | null; chainId: number },
+  signerAddress: string,
+): Promise<whitelist.AutoSignCheckResult> {
+  const autoSignResult = await whitelist.checkAutoSign({
+    origin,
+    to: ctx.to,
+    data: ctx.data,
+    value: ctx.value,
+    gasLimit: ctx.gasLimit,
+    chainId: ctx.chainId,
+  });
+
+  if (!autoSignResult.allowed) {
+    const approved = await requestUserConfirmation({
+      id: genId(),
+      method,
+      origin,
+      params,
+      signerAddress,
+      chainId: ctx.chainId,
+    } as any);
+    if (!approved) {
+      throw userRejection('User rejected the request');
+    }
+  }
+
+  return autoSignResult;
+}
+
 async function handleSendTransaction(params: unknown[], origin: string): Promise<string> {
   const account = await keyManager.getAccount();
-  const tx = params[0] as Record<string, string>;
   const network = await networkManager.getActiveNetwork();
   const chainId = network.chainId;
 
+  const tx = params[0] as Record<string, string>;
   const value = tx.value ?? '0x0';
   const gasLimit = tx.gas ?? tx.gasLimit ?? null;
-
-  // Check auto-sign whitelist
-  const autoSignResult = await whitelist.checkAutoSign({
-    origin,
-    to: tx.to ?? null,
-    data: tx.data ?? null,
-    value: String(hexToBigInt(value as `0x${string}`)),
-    gasLimit: gasLimit ? String(hexToBigInt(gasLimit as `0x${string}`)) : null,
-    chainId,
-  });
 
   // SECURITY: Validate tx.from matches active account if specified
   if (tx.from && tx.from.toLowerCase() !== account.address.toLowerCase()) {
     throw new Error(`Requested signer ${tx.from} does not match active account ${account.address}`);
   }
 
-  // If not auto-signed, require manual confirmation via popup
-  if (!autoSignResult.allowed) {
-    const approved = await requestUserConfirmation({
-      id: genId(),
-      method: 'eth_sendTransaction',
-      origin,
-      params: [tx],
-      signerAddress: account.address,
+  const autoSignResult = await checkWhitelistOrConfirm(
+    'eth_sendTransaction',
+    origin,
+    [tx],
+    {
+      to: tx.to ?? null,
+      data: tx.data ?? null,
+      value: String(hexToBigInt(value as `0x${string}`)),
+      gasLimit: gasLimit ? String(hexToBigInt(gasLimit as `0x${string}`)) : null,
       chainId,
-    } as any);
-    if (!approved) {
-      const err = new Error('User rejected the transaction');
-      (err as any).code = 4001;
-      throw err;
-    }
-  }
+    },
+    account.address,
+  );
 
   // Build and send transaction
-  const client = createWalletClient({
-    account,
-    transport: http(network.rpcUrl),
-  });
+  const client = await networkManager.getWalletClient(account);
+  const chain = networkManager.buildViemChain(network);
 
   const hash = await client.sendTransaction({
     to: tx.to as `0x${string}`,
     value: hexToBigInt(value as `0x${string}`),
     data: (tx.data as `0x${string}`) ?? undefined,
     gas: gasLimit ? hexToBigInt(gasLimit as `0x${string}`) : undefined,
-    chain: { id: chainId, name: network.name, nativeCurrency: { name: network.symbol, symbol: network.symbol, decimals: network.decimals }, rpcUrls: { default: { http: [network.rpcUrl] } } },
+    chain,
   });
 
   // Log the transaction
+  const logId = genId();
   await txLogger.appendLog({
-    id: genId(),
+    id: logId,
     timestamp: Date.now(),
     chainId,
     from: account.address,
@@ -229,6 +252,9 @@ async function handleSendTransaction(params: unknown[], origin: string): Promise
     ruleId: autoSignResult.rule?.id,
     status: 'pending',
   });
+
+  // Poll for receipt to update tx status
+  pollTxReceipt(logId, chainId, hash);
 
   notifyTx(hash, origin, autoSignResult.allowed, network.blockExplorerUrl);
   return hash;
@@ -244,31 +270,13 @@ async function handlePersonalSign(params: unknown[], origin: string): Promise<st
     throw new Error(`Requested signer ${requestedAddr} does not match active account ${account.address}`);
   }
 
-  // Check whitelist — auto-sign if origin is trusted
-  const autoSignResult = await whitelist.checkAutoSign({
+  const autoSignResult = await checkWhitelistOrConfirm(
+    'personal_sign',
     origin,
-    to: null,
-    data: null,
-    value: '0',
-    gasLimit: null,
-    chainId,
-  });
-
-  if (!autoSignResult.allowed) {
-    const approved = await requestUserConfirmation({
-      id: genId(),
-      method: 'personal_sign',
-      origin,
-      params,
-      signerAddress: account.address,
-      chainId,
-    } as any);
-    if (!approved) {
-      const err = new Error('User rejected the request');
-      (err as any).code = 4001;
-      throw err;
-    }
-  }
+    params,
+    { to: null, data: null, value: '0', gasLimit: null, chainId },
+    account.address,
+  );
 
   const message = params[0] as string;
   const sig = await account.signMessage({ message: { raw: message as `0x${string}` } });
@@ -286,31 +294,13 @@ async function handleSignTypedData(params: unknown[], origin: string): Promise<s
     throw new Error(`Requested signer ${requestedAddr} does not match active account ${account.address}`);
   }
 
-  // Check whitelist — auto-sign if origin is trusted
-  const autoSignResult = await whitelist.checkAutoSign({
+  const autoSignResult = await checkWhitelistOrConfirm(
+    'eth_signTypedData_v4',
     origin,
-    to: null,
-    data: null,
-    value: '0',
-    gasLimit: null,
-    chainId,
-  });
-
-  if (!autoSignResult.allowed) {
-    const approved = await requestUserConfirmation({
-      id: genId(),
-      method: 'eth_signTypedData_v4',
-      origin,
-      params,
-      signerAddress: account.address,
-      chainId,
-    } as any);
-    if (!approved) {
-      const err = new Error('User rejected the request');
-      (err as any).code = 4001;
-      throw err;
-    }
-  }
+    params,
+    { to: null, data: null, value: '0', gasLimit: null, chainId },
+    account.address,
+  );
 
   const typedData = typeof params[1] === 'string' ? JSON.parse(params[1]) : params[1];
   const sig = await account.signTypedData(typedData);
@@ -328,12 +318,52 @@ async function handleWatchAsset(params: unknown[]): Promise<boolean> {
 
 async function forwardToNode(method: string, params: unknown[]): Promise<unknown> {
   const network = await networkManager.getActiveNetwork();
-  const response = await fetch(network.rpcUrl, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ jsonrpc: '2.0', id: 1, method, params }),
-  });
+  let response: Response;
+  try {
+    response = await fetch(network.rpcUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ jsonrpc: '2.0', id: 1, method, params }),
+    });
+  } catch (err: any) {
+    throw new RpcError(
+      `RPC request failed: ${err.message ?? 'network error'}`,
+      -32603,
+    );
+  }
+  if (!response.ok) {
+    throw new RpcError(
+      `RPC returned HTTP ${response.status}`,
+      -32603,
+    );
+  }
   const json = await response.json();
   if (json.error) throw json.error;
   return json.result;
+}
+
+// --- Tx receipt polling ---
+
+function pollTxReceipt(logId: string, chainId: number, hash: string): void {
+  const MAX_ATTEMPTS = 60;
+  const INTERVAL_MS = 5000;
+  let attempts = 0;
+
+  const timer = setInterval(async () => {
+    attempts++;
+    try {
+      const client = await networkManager.getClient(chainId);
+      const receipt = await client.getTransactionReceipt({ hash: hash as `0x${string}` });
+      if (receipt) {
+        const status = receipt.status === 'success' ? 'confirmed' : 'failed';
+        await txLogger.updateLogEntry(logId, { status });
+        clearInterval(timer);
+      }
+    } catch {
+      // Receipt not available yet — keep polling
+    }
+    if (attempts >= MAX_ATTEMPTS) {
+      clearInterval(timer);
+    }
+  }, INTERVAL_MS);
 }

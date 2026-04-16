@@ -3,6 +3,17 @@
 
 import { MSG_SOURCE, type RpcResponse } from '../types/messages';
 
+// Forward injectWindowEthereum setting to inpage.ts (MAIN world)
+// inpage.ts cannot access chrome.storage, so we read and relay it.
+chrome.storage.local.get('settings', (result) => {
+  const forceInject = result.settings?.injectWindowEthereum === true;
+  window.postMessage({
+    source: MSG_SOURCE,
+    type: 'inject_setting',
+    forceInject,
+  }, '*');
+});
+
 // Forward messages from page (inpage.js) to background service worker
 // SECURITY: Never trust page-supplied origin — overwrite with real origin from ISOLATED world
 window.addEventListener('message', (event) => {

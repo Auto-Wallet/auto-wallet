@@ -3,7 +3,7 @@
   "name": "Auto Wallet",
   "version": "0.1.7",
   "description": "Minimal auto-signing wallet for EVM chains",
-  "permissions": ["storage", "activeTab", "windows", "notifications"],
+  "permissions": ["storage", "activeTab", "tabs", "windows", "notifications"],
   "background": {
     "service_worker": "background.js",
     "type": "module"

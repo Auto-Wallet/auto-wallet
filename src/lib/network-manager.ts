@@ -1,4 +1,5 @@
-import { createPublicClient, http, type PublicClient } from 'viem';
+import { createPublicClient, createWalletClient, http, type PublicClient, type WalletClient, type Chain } from 'viem';
+import type { PrivateKeyAccount } from 'viem/accounts';
 import { type Network, DEFAULT_NETWORKS } from '../types/network';
 import { getItem, setItem, STORAGE_KEYS } from './storage';
 
@@ -80,4 +81,23 @@ export async function getActiveChainId(): Promise<number> {
   const stored = await getItem<number>(STORAGE_KEYS.ACTIVE_CHAIN_ID);
   if (stored !== null) activeChainId = stored;
   return activeChainId;
+}
+
+/** Build a viem Chain descriptor from a Network object. */
+export function buildViemChain(network: Network): Chain {
+  return {
+    id: network.chainId,
+    name: network.name,
+    nativeCurrency: { name: network.symbol, symbol: network.symbol, decimals: network.decimals },
+    rpcUrls: { default: { http: [network.rpcUrl] } },
+  } as Chain;
+}
+
+/** Create a WalletClient configured for the active network. */
+export async function getWalletClient(account: PrivateKeyAccount): Promise<WalletClient> {
+  const network = await getActiveNetwork();
+  return createWalletClient({
+    account,
+    transport: http(network.rpcUrl),
+  });
 }

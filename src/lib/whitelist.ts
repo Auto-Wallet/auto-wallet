@@ -1,3 +1,4 @@
+import { parseEther } from 'viem';
 import type { WhitelistRule, AutoSignResult } from '../types/whitelist';
 import { getItem, setItem, STORAGE_KEYS } from './storage';
 
@@ -41,6 +42,8 @@ interface TxContext {
   chainId: number;
 }
 
+export type AutoSignCheckResult = AutoSignResult;
+
 export async function checkAutoSign(ctx: TxContext): Promise<AutoSignResult> {
   const rules = await getRules();
   const enabledRules = rules.filter((r) => r.enabled);
@@ -50,7 +53,7 @@ export async function checkAutoSign(ctx: TxContext): Promise<AutoSignResult> {
 
     // Safety caps — always enforced
     if (rule.maxValueEth !== null) {
-      const maxWei = BigInt(Math.floor(parseFloat(rule.maxValueEth) * 1e18));
+      const maxWei = parseEther(rule.maxValueEth);
       if (BigInt(ctx.value) > maxWei) {
         return { allowed: false, rule, reason: `Value exceeds cap (${rule.maxValueEth} ETH)` };
       }

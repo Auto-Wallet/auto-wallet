@@ -8,9 +8,12 @@ if (existsSync(DIST)) rmSync(DIST, { recursive: true });
 mkdirSync(DIST, { recursive: true });
 
 async function buildEntry(entry: string, outputName: string) {
+  // Use a per-entry temp directory to avoid filename collisions in parallel builds
+  const tempDir = join(DIST, `_tmp_${outputName.replace('.', '_')}`);
+  mkdirSync(tempDir, { recursive: true });
   const result = await Bun.build({
     entrypoints: [entry],
-    outdir: DIST,
+    outdir: tempDir,
     target: 'browser',
     minify: true,
   });
@@ -18,21 +21,22 @@ async function buildEntry(entry: string, outputName: string) {
     console.error(`Build failed for ${entry}:`, result.logs);
     process.exit(1);
   }
-  // Rename to desired output name
+  // Move output to final destination
   const builtPath = result.outputs[0].path;
   const targetPath = join(DIST, outputName);
-  if (builtPath !== targetPath) {
-    renameSync(builtPath, targetPath);
-  }
+  renameSync(builtPath, targetPath);
+  rmSync(tempDir, { recursive: true });
 }
 
-// Build all entries
-await buildEntry('src/background/index.ts', 'background.js');
-await buildEntry('src/content/index.ts', 'content.js');
-await buildEntry('src/content/inpage.ts', 'inpage.js');
-await buildEntry('src/popup/index.tsx', 'popup.js');
-await buildEntry('src/confirm/index.tsx', 'confirm.js');
-await buildEntry('src/unlock/index.tsx', 'unlock-page.js');
+// Build all entries in parallel — each uses its own temp directory
+await Promise.all([
+  buildEntry('src/background/index.ts', 'background.js'),
+  buildEntry('src/content/index.ts', 'content.js'),
+  buildEntry('src/content/inpage.ts', 'inpage.js'),
+  buildEntry('src/popup/index.tsx', 'popup.js'),
+  buildEntry('src/confirm/index.tsx', 'confirm.js'),
+  buildEntry('src/unlock/index.tsx', 'unlock-page.js'),
+]);
 
 // Unlock HTML (dApp-triggered unlock popup)
 writeFileSync(join(DIST, 'unlock.html'), `<!DOCTYPE html>

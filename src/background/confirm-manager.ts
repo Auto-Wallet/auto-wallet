@@ -21,31 +21,35 @@ export interface ConfirmRequest {
 
 /** Open a confirmation popup and wait for user to approve or reject. */
 export function requestUserConfirmation(request: ConfirmRequest): Promise<boolean> {
-  return new Promise((resolve) => {
+  return new Promise(async (resolve) => {
     pendingConfirmations.set(request.id, { id: request.id, resolve });
 
-    const data = encodeURIComponent(JSON.stringify(request));
-    const url = chrome.runtime.getURL(`confirm.html?data=${data}`);
+    // Store request data in session storage instead of URL query string
+    // to avoid URL length limits with large calldata
+    await chrome.storage.session.set({ [`confirm_${request.id}`]: request });
 
-    createPopupWindow(url, 360, 740).then((window) => {
-      if (!window) {
-        pendingConfirmations.delete(request.id);
-        resolve(false);
-        return;
-      }
+    const url = chrome.runtime.getURL(`confirm.html?id=${request.id}`);
 
-      const onRemoved = (windowId: number) => {
-        if (windowId === window.id) {
-          chrome.windows.onRemoved.removeListener(onRemoved);
-          const pending = pendingConfirmations.get(request.id);
-          if (pending) {
-            pendingConfirmations.delete(request.id);
-            pending.resolve(false);
-          }
+    const window = await createPopupWindow(url, 360, 740);
+    if (!window) {
+      await chrome.storage.session.remove(`confirm_${request.id}`);
+      pendingConfirmations.delete(request.id);
+      resolve(false);
+      return;
+    }
+
+    const onRemoved = (windowId: number) => {
+      if (windowId === window.id) {
+        chrome.windows.onRemoved.removeListener(onRemoved);
+        chrome.storage.session.remove(`confirm_${request.id}`);
+        const pending = pendingConfirmations.get(request.id);
+        if (pending) {
+          pendingConfirmations.delete(request.id);
+          pending.resolve(false);
         }
-      };
-      chrome.windows.onRemoved.addListener(onRemoved);
-    });
+      }
+    };
+    chrome.windows.onRemoved.addListener(onRemoved);
   });
 }
 
@@ -57,6 +61,7 @@ chrome.runtime.onMessage.addListener((message) => {
   const pending = pendingConfirmations.get(message.requestId);
   if (pending) {
     pendingConfirmations.delete(message.requestId);
+    chrome.storage.session.remove(`confirm_${message.requestId}`);
     pending.resolve(message.approved === true);
 
     // If user toggled "Trust this site", add origin to whitelist

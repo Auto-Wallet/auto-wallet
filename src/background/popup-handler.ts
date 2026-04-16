@@ -5,7 +5,7 @@ import * as tokenManager from '../lib/token-manager';
 import * as txLogger from '../lib/tx-logger';
 import { getClient } from '../lib/network-manager';
 import { getItem, setItem, STORAGE_KEYS } from '../lib/storage';
-import { formatEther, parseEther, parseUnits, createWalletClient, http, encodeFunctionData, erc20Abi } from 'viem';
+import { formatEther, parseEther, parseUnits, encodeFunctionData, erc20Abi } from 'viem';
 import { genId } from '../types/messages';
 import type { WhitelistRule } from '../types/whitelist';
 import type { Network } from '../types/network';
@@ -88,24 +88,17 @@ export async function handlePopupAction(action: string, payload: any): Promise<u
     case 'sendNative': {
       const account = await keyManager.getAccount();
       const network = await networkManager.getActiveNetwork();
-      const client = createWalletClient({
-        account,
-        transport: http(network.rpcUrl),
-      });
+      const client = await networkManager.getWalletClient(account);
+      const chain = networkManager.buildViemChain(network);
       const value = parseEther(payload.amount);
-      const chain = {
-        id: network.chainId,
-        name: network.name,
-        nativeCurrency: { name: network.symbol, symbol: network.symbol, decimals: network.decimals },
-        rpcUrls: { default: { http: [network.rpcUrl] } },
-      };
       const hash = await client.sendTransaction({
         to: payload.to as `0x${string}`,
         value,
         chain,
       });
+      const logId = genId();
       await txLogger.appendLog({
-        id: genId(),
+        id: logId,
         timestamp: Date.now(),
         chainId: network.chainId,
         from: account.address,
@@ -116,6 +109,7 @@ export async function handlePopupAction(action: string, payload: any): Promise<u
         autoSigned: true,
         status: 'pending',
       });
+      pollTxReceipt(logId, network.chainId, hash);
       return hash;
     }
 
@@ -123,30 +117,23 @@ export async function handlePopupAction(action: string, payload: any): Promise<u
     case 'sendToken': {
       const account = await keyManager.getAccount();
       const network = await networkManager.getActiveNetwork();
-      const client = createWalletClient({
-        account,
-        transport: http(network.rpcUrl),
-      });
+      const client = await networkManager.getWalletClient(account);
+      const chain = networkManager.buildViemChain(network);
       const amount = parseUnits(payload.amount, payload.decimals);
       const data = encodeFunctionData({
         abi: erc20Abi,
         functionName: 'transfer',
         args: [payload.to as `0x${string}`, amount],
       });
-      const chain = {
-        id: network.chainId,
-        name: network.name,
-        nativeCurrency: { name: network.symbol, symbol: network.symbol, decimals: network.decimals },
-        rpcUrls: { default: { http: [network.rpcUrl] } },
-      };
       const hash = await client.sendTransaction({
         to: payload.tokenAddress as `0x${string}`,
         data,
         value: 0n,
         chain,
       });
+      const logId = genId();
       await txLogger.appendLog({
-        id: genId(),
+        id: logId,
         timestamp: Date.now(),
         chainId: network.chainId,
         from: account.address,
@@ -158,6 +145,7 @@ export async function handlePopupAction(action: string, payload: any): Promise<u
         autoSigned: true,
         status: 'pending',
       });
+      pollTxReceipt(logId, network.chainId, hash);
       return hash;
     }
 
@@ -217,4 +205,30 @@ export async function handlePopupAction(action: string, payload: any): Promise<u
     default:
       throw new Error(`Unknown popup action: ${action}`);
   }
+}
+
+// --- Tx receipt polling (shared with rpc-handler, but kept simple as a local helper) ---
+
+function pollTxReceipt(logId: string, chainId: number, hash: string): void {
+  const MAX_ATTEMPTS = 60;
+  const INTERVAL_MS = 5000;
+  let attempts = 0;
+
+  const timer = setInterval(async () => {
+    attempts++;
+    try {
+      const client = await networkManager.getClient(chainId);
+      const receipt = await client.getTransactionReceipt({ hash: hash as `0x${string}` });
+      if (receipt) {
+        const status = receipt.status === 'success' ? 'confirmed' : 'failed';
+        await txLogger.updateLogEntry(logId, { status });
+        clearInterval(timer);
+      }
+    } catch {
+      // Receipt not available yet — keep polling
+    }
+    if (attempts >= MAX_ATTEMPTS) {
+      clearInterval(timer);
+    }
+  }, INTERVAL_MS);
 }

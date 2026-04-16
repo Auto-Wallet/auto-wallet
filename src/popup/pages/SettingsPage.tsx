@@ -1,10 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { callBackground } from '../api';
-
-interface WalletSettings {
-  autoLockMinutes: number;
-  injectWindowEthereum: boolean;
-}
+import type { WalletSettings } from '../../types/settings';
 
 interface AccountInfo { id: string; label: string; address: string; }
 
