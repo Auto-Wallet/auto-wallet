@@ -234,24 +234,35 @@ async function handlePersonalSign(params: unknown[], origin: string): Promise<st
   const chainId = networkManager.getActiveChainId();
 
   // SECURITY: Validate requested address matches active account
-  // personal_sign: params[0] = message, params[1] = address
   const requestedAddr = params[1] as string | undefined;
   if (requestedAddr && requestedAddr.toLowerCase() !== account.address.toLowerCase()) {
     throw new Error(`Requested signer ${requestedAddr} does not match active account ${account.address}`);
   }
 
-  const approved = await requestUserConfirmation({
-    id: genId(),
-    method: 'personal_sign',
+  // Check whitelist — auto-sign if origin is trusted
+  const autoSignResult = await whitelist.checkAutoSign({
     origin,
-    params,
-    signerAddress: account.address,
+    to: null,
+    data: null,
+    value: '0',
+    gasLimit: null,
     chainId,
-  } as any);
-  if (!approved) {
-    const err = new Error('User rejected the request');
-    (err as any).code = 4001;
-    throw err;
+  });
+
+  if (!autoSignResult.allowed) {
+    const approved = await requestUserConfirmation({
+      id: genId(),
+      method: 'personal_sign',
+      origin,
+      params,
+      signerAddress: account.address,
+      chainId,
+    } as any);
+    if (!approved) {
+      const err = new Error('User rejected the request');
+      (err as any).code = 4001;
+      throw err;
+    }
   }
 
   const message = params[0] as string;
@@ -263,24 +274,35 @@ async function handleSignTypedData(params: unknown[], origin: string): Promise<s
   const chainId = networkManager.getActiveChainId();
 
   // SECURITY: Validate requested address matches active account
-  // signTypedData: params[0] = address, params[1] = typed data
   const requestedAddr = params[0] as string | undefined;
   if (requestedAddr && requestedAddr.toLowerCase() !== account.address.toLowerCase()) {
     throw new Error(`Requested signer ${requestedAddr} does not match active account ${account.address}`);
   }
 
-  const approved = await requestUserConfirmation({
-    id: genId(),
-    method: 'eth_signTypedData_v4',
+  // Check whitelist — auto-sign if origin is trusted
+  const autoSignResult = await whitelist.checkAutoSign({
     origin,
-    params,
-    signerAddress: account.address,
+    to: null,
+    data: null,
+    value: '0',
+    gasLimit: null,
     chainId,
-  } as any);
-  if (!approved) {
-    const err = new Error('User rejected the request');
-    (err as any).code = 4001;
-    throw err;
+  });
+
+  if (!autoSignResult.allowed) {
+    const approved = await requestUserConfirmation({
+      id: genId(),
+      method: 'eth_signTypedData_v4',
+      origin,
+      params,
+      signerAddress: account.address,
+      chainId,
+    } as any);
+    if (!approved) {
+      const err = new Error('User rejected the request');
+      (err as any).code = 4001;
+      throw err;
+    }
   }
 
   const typedData = typeof params[1] === 'string' ? JSON.parse(params[1]) : params[1];
