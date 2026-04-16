@@ -46,8 +46,12 @@ export async function handlePopupAction(action: string, payload: any): Promise<u
     }
     case 'renameAccount':
       return keyManager.renameAccount(payload.accountId, payload.label);
-    case 'removeAccount':
-      return keyManager.removeAccount(payload.accountId);
+    case 'removeAccount': {
+      await keyManager.removeAccount(payload.accountId);
+      const addr = await keyManager.getAddress();
+      emitAccountsChanged([addr]);
+      return true;
+    }
     case 'getActiveAccountId':
       return await keyManager.getActiveAccountId();
     case 'deleteWallet':
@@ -56,12 +60,21 @@ export async function handlePopupAction(action: string, payload: any): Promise<u
       return keyManager.exportPrivateKey(payload.accountId, payload.password);
 
     // --- Add account (reuses master password) ---
-    case 'addAccountGenerate':
-      return keyManager.addAccountGenerate(payload.label);
-    case 'addAccountPrivateKey':
-      return keyManager.addAccountPrivateKey(payload.privateKey, payload.label);
-    case 'addAccountMnemonic':
-      return keyManager.addAccountMnemonic(payload.mnemonic, payload.label);
+    case 'addAccountGenerate': {
+      const addr = await keyManager.addAccountGenerate(payload.label);
+      emitAccountsChanged([addr]);
+      return addr;
+    }
+    case 'addAccountPrivateKey': {
+      const addr = await keyManager.addAccountPrivateKey(payload.privateKey, payload.label);
+      emitAccountsChanged([addr]);
+      return addr;
+    }
+    case 'addAccountMnemonic': {
+      const addr = await keyManager.addAccountMnemonic(payload.mnemonic, payload.label);
+      emitAccountsChanged([addr]);
+      return addr;
+    }
 
     // --- Balance ---
     case 'getNativeBalance': {
