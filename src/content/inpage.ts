@@ -22,15 +22,31 @@ class AutoWalletProvider {
         this._handleEvent(event.data.eventName, event.data.payload);
       }
     });
+
+    // Proactively fetch accounts on init so dApps see connected state after reload
+    this._init();
+  }
+
+  private async _init() {
+    try {
+      const accounts = await this.request({ method: 'eth_accounts' }) as string[];
+      if (accounts.length > 0) {
+        this._accounts = accounts;
+      }
+      const chainId = await this.request({ method: 'eth_chainId' }) as string;
+      if (chainId) {
+        this._chainId = chainId;
+      }
+    } catch {}
   }
 
   // EIP-1193: request
   async request(args: { method: string; params?: unknown[] }): Promise<unknown> {
     const { method, params = [] } = args;
 
-    // Handle locally cacheable methods
+    // Only cache chainId locally; eth_accounts always goes to background
+    // so it can restore session after page reload
     if (method === 'eth_chainId') return this._chainId;
-    if (method === 'eth_accounts') return [...this._accounts];
 
     return new Promise((resolve, reject) => {
       const id = genId();
