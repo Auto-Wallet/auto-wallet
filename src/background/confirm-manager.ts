@@ -3,6 +3,7 @@
 import { MSG_SOURCE, genId } from '../types/messages';
 import { addRule } from '../lib/whitelist';
 import type { WhitelistRule } from '../types/whitelist';
+import { createPopupWindow } from './window-utils';
 
 interface PendingConfirmation {
   id: string;
@@ -26,34 +27,25 @@ export function requestUserConfirmation(request: ConfirmRequest): Promise<boolea
     const data = encodeURIComponent(JSON.stringify(request));
     const url = chrome.runtime.getURL(`confirm.html?data=${data}`);
 
-    chrome.windows.create(
-      {
-        url,
-        type: 'popup',
-        width: 360,
-        height: 660,
-        focused: true,
-      },
-      (window) => {
-        if (!window) {
-          pendingConfirmations.delete(request.id);
-          resolve(false);
-          return;
-        }
+    createPopupWindow(url, 360, 740).then((window) => {
+      if (!window) {
+        pendingConfirmations.delete(request.id);
+        resolve(false);
+        return;
+      }
 
-        const onRemoved = (windowId: number) => {
-          if (windowId === window.id) {
-            chrome.windows.onRemoved.removeListener(onRemoved);
-            const pending = pendingConfirmations.get(request.id);
-            if (pending) {
-              pendingConfirmations.delete(request.id);
-              pending.resolve(false);
-            }
+      const onRemoved = (windowId: number) => {
+        if (windowId === window.id) {
+          chrome.windows.onRemoved.removeListener(onRemoved);
+          const pending = pendingConfirmations.get(request.id);
+          if (pending) {
+            pendingConfirmations.delete(request.id);
+            pending.resolve(false);
           }
-        };
-        chrome.windows.onRemoved.addListener(onRemoved);
-      },
-    );
+        }
+      };
+      chrome.windows.onRemoved.addListener(onRemoved);
+    });
   });
 }
 

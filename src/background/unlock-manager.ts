@@ -1,6 +1,7 @@
 // Manages the unlock popup window triggered by dApp connection attempts
 
 import { MSG_SOURCE } from '../types/messages';
+import { createPopupWindow } from './window-utils';
 
 interface PendingUnlock {
   resolve: (unlocked: boolean) => void;
@@ -32,36 +33,27 @@ export function requestUnlock(origin: string): Promise<boolean> {
     const params = new URLSearchParams({ origin });
     const url = chrome.runtime.getURL(`unlock.html?${params}`);
 
-    chrome.windows.create(
-      {
-        url,
-        type: 'popup',
-        width: 360,
-        height: 480,
-        focused: true,
-      },
-      (window) => {
-        if (!window) {
-          pendingUnlock = null;
-          resolve(false);
-          return;
-        }
+    createPopupWindow(url, 360, 480).then((window) => {
+      if (!window) {
+        pendingUnlock = null;
+        resolve(false);
+        return;
+      }
 
-        unlockWindowId = window.id!;
+      unlockWindowId = window.id!;
 
-        const onRemoved = (windowId: number) => {
-          if (windowId === unlockWindowId) {
-            chrome.windows.onRemoved.removeListener(onRemoved);
-            unlockWindowId = null;
-            if (pendingUnlock) {
-              pendingUnlock.resolve(false);
-              pendingUnlock = null;
-            }
+      const onRemoved = (windowId: number) => {
+        if (windowId === unlockWindowId) {
+          chrome.windows.onRemoved.removeListener(onRemoved);
+          unlockWindowId = null;
+          if (pendingUnlock) {
+            pendingUnlock.resolve(false);
+            pendingUnlock = null;
           }
-        };
-        chrome.windows.onRemoved.addListener(onRemoved);
-      },
-    );
+        }
+      };
+      chrome.windows.onRemoved.addListener(onRemoved);
+    });
   });
 }
 
