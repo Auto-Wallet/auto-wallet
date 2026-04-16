@@ -12,6 +12,7 @@ import * as tokenManager from '../lib/token-manager';
 import { genId } from '../types/messages';
 import { requestUserConfirmation } from './confirm-manager';
 import { requestUnlock } from './unlock-manager';
+import { notifyTx, notifySign } from '../lib/notify';
 
 // --- RPC Method Router ---
 
@@ -226,6 +227,7 @@ async function handleSendTransaction(params: unknown[], origin: string): Promise
     status: 'pending',
   });
 
+  notifyTx(hash, origin, autoSignResult.allowed);
   return hash;
 }
 
@@ -266,7 +268,9 @@ async function handlePersonalSign(params: unknown[], origin: string): Promise<st
   }
 
   const message = params[0] as string;
-  return account.signMessage({ message: { raw: message as `0x${string}` } });
+  const sig = await account.signMessage({ message: { raw: message as `0x${string}` } });
+  notifySign('personal_sign', origin, autoSignResult.allowed);
+  return sig;
 }
 
 async function handleSignTypedData(params: unknown[], origin: string): Promise<string> {
@@ -306,7 +310,9 @@ async function handleSignTypedData(params: unknown[], origin: string): Promise<s
   }
 
   const typedData = typeof params[1] === 'string' ? JSON.parse(params[1]) : params[1];
-  return account.signTypedData(typedData);
+  const sig = await account.signTypedData(typedData);
+  notifySign('eth_signTypedData_v4', origin, autoSignResult.allowed);
+  return sig;
 }
 
 async function handleWatchAsset(params: unknown[]): Promise<boolean> {
