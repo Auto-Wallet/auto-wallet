@@ -170,7 +170,11 @@ export async function isUnlocked(): Promise<boolean> {
   return restoreFromSession();
 }
 
-export function getAccount(): PrivateKeyAccount {
+export async function getAccount(): Promise<PrivateKeyAccount> {
+  // Try restore from session if SW just restarted
+  if (!activeAccountId || unlockedAccounts.size === 0) {
+    await restoreFromSession();
+  }
   if (!activeAccountId) throw new Error('Wallet is locked');
   const account = unlockedAccounts.get(activeAccountId);
   if (!account) throw new Error('Active account not found in memory');
@@ -178,9 +182,13 @@ export function getAccount(): PrivateKeyAccount {
   return account;
 }
 
-export function getAddress(): string { return getAccount().address; }
+export async function getAddress(): Promise<string> {
+  const account = await getAccount();
+  return account.address;
+}
 
-export function getActiveAccountId(): string {
+export async function getActiveAccountId(): Promise<string> {
+  if (!activeAccountId) await restoreFromSession();
   if (!activeAccountId) throw new Error('Wallet is locked');
   return activeAccountId;
 }

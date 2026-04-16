@@ -31,7 +31,7 @@ export async function handlePopupAction(action: string, payload: any): Promise<u
       await keyManager.lock();
       return true;
     case 'getAddress':
-      return keyManager.getAddress();
+      return await keyManager.getAddress();
 
     // --- Multi-account ---
     case 'listAccounts':
@@ -43,7 +43,7 @@ export async function handlePopupAction(action: string, payload: any): Promise<u
     case 'removeAccount':
       return keyManager.removeAccount(payload.accountId);
     case 'getActiveAccountId':
-      return keyManager.getActiveAccountId();
+      return await keyManager.getActiveAccountId();
     case 'deleteWallet':
       return keyManager.deleteWallet();
     case 'exportPrivateKey':
@@ -59,7 +59,7 @@ export async function handlePopupAction(action: string, payload: any): Promise<u
 
     // --- Balance ---
     case 'getNativeBalance': {
-      const address = keyManager.getAddress();
+      const address = await keyManager.getAddress();
       const client = await getClient();
       const balance = await client.getBalance({ address: address as `0x${string}` });
       return formatEther(balance);
@@ -67,7 +67,7 @@ export async function handlePopupAction(action: string, payload: any): Promise<u
 
     // --- Send native token ---
     case 'sendNative': {
-      const account = keyManager.getAccount();
+      const account = await keyManager.getAccount();
       const network = await networkManager.getActiveNetwork();
       const client = createWalletClient({
         account,
@@ -102,7 +102,7 @@ export async function handlePopupAction(action: string, payload: any): Promise<u
 
     // --- Send ERC-20 token ---
     case 'sendToken': {
-      const account = keyManager.getAccount();
+      const account = await keyManager.getAccount();
       const network = await networkManager.getActiveNetwork();
       const client = createWalletClient({
         account,
@@ -172,7 +172,7 @@ export async function handlePopupAction(action: string, payload: any): Promise<u
     case 'removeToken':
       return tokenManager.removeToken(payload.chainId, payload.address);
     case 'getTokenBalance':
-      return tokenManager.getTokenBalance(payload.token, keyManager.getAddress());
+      return tokenManager.getTokenBalance(payload.token, await keyManager.getAddress());
 
     // --- Tx Log ---
     case 'getTxLog':

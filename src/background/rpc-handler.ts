@@ -69,12 +69,12 @@ export async function handleRpcMethod(
 
 async function handleAccounts(): Promise<string[]> {
   if (!(await keyManager.isUnlocked())) return [];
-  return [keyManager.getAddress()];
+  return [await keyManager.getAddress()];
 }
 
 async function handleRequestAccounts(origin: string): Promise<string[]> {
   // If already unlocked, return accounts directly
-  if (await keyManager.isUnlocked()) return [keyManager.getAddress()];
+  if (await keyManager.isUnlocked()) return [await keyManager.getAddress()];
 
   // Check if wallet exists
   const hasWallet = await keyManager.hasWallet();
@@ -88,7 +88,7 @@ async function handleRequestAccounts(origin: string): Promise<string[]> {
     throw err;
   }
 
-  return [keyManager.getAddress()];
+  return [await keyManager.getAddress()];
 }
 
 async function handleSwitchChain(params: unknown[]): Promise<null> {
@@ -156,7 +156,7 @@ async function handleAddChain(params: unknown[], origin: string): Promise<null> 
 }
 
 async function handleSendTransaction(params: unknown[], origin: string): Promise<string> {
-  const account = keyManager.getAccount();
+  const account = await keyManager.getAccount();
   const tx = params[0] as Record<string, string>;
   const network = await networkManager.getActiveNetwork();
   const chainId = network.chainId;
@@ -230,7 +230,7 @@ async function handleSendTransaction(params: unknown[], origin: string): Promise
 }
 
 async function handlePersonalSign(params: unknown[], origin: string): Promise<string> {
-  const account = keyManager.getAccount();
+  const account = await keyManager.getAccount();
   const chainId = networkManager.getActiveChainId();
 
   // SECURITY: Validate requested address matches active account
@@ -270,7 +270,7 @@ async function handlePersonalSign(params: unknown[], origin: string): Promise<st
 }
 
 async function handleSignTypedData(params: unknown[], origin: string): Promise<string> {
-  const account = keyManager.getAccount();
+  const account = await keyManager.getAccount();
   const chainId = networkManager.getActiveChainId();
 
   // SECURITY: Validate requested address matches active account
