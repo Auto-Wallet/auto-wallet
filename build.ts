@@ -85,21 +85,12 @@ copyFileSync(join(import.meta.dir, 'src/popup/styles.css'), join(DIST, 'popup.cs
 // Copy manifest
 copyFileSync(join(import.meta.dir, 'public/manifest.json'), join(DIST, 'manifest.json'));
 
-// Generate extension icons from source image using sips (macOS)
+// Copy pre-built icon PNGs (16, 48, 128)
 mkdirSync(join(DIST, 'icons'), { recursive: true });
-const sourceIcon = join(import.meta.dir, 'public/icons/icon-main.png');
-if (existsSync(sourceIcon)) {
-  // Use sips to resize for each required size
-  for (const size of [16, 48, 128]) {
-    const target = join(DIST, 'icons', `icon${size}.png`);
-    Bun.spawnSync(['sips', '-z', String(size), String(size), sourceIcon, '--out', target]);
-  }
-} else {
-  console.warn('Warning: public/icons/icon-main.png not found, using fallback SVG icons');
-  for (const size of [16, 48, 128]) {
-    const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 ${size} ${size}"><rect width="${size}" height="${size}" rx="${Math.round(size * 0.25)}" fill="#1a1a2e"/><text x="50%" y="50%" dominant-baseline="central" text-anchor="middle" font-size="${Math.round(size * 0.5)}" font-family="sans-serif" fill="#a78bfa" font-weight="bold">AW</text></svg>`;
-    writeFileSync(join(DIST, 'icons', `icon${size}.png`), svg);
-  }
+for (const size of [16, 48, 128]) {
+  const src = join(import.meta.dir, 'public/icons', `icon${size}.png`);
+  const target = join(DIST, 'icons', `icon${size}.png`);
+  copyFileSync(src, target);
 }
 
 console.log('Build complete! Output: dist/');
