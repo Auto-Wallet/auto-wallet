@@ -1,0 +1,24 @@
+{
+  "name": "auto-wallet",
+  "module": "index.ts",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "build": "bun run build.ts",
+    "dev": "bun --watch run build.ts"
+  },
+  "devDependencies": {
+    "@types/bun": "latest",
+    "@types/chrome": "^0.1.40",
+    "@types/react": "^19.2.14",
+    "@types/react-dom": "^19.2.3",
+    "react": "^19.2.5",
+    "react-dom": "^19.2.5"
+  },
+  "peerDependencies": {
+    "typescript": "^5"
+  },
+  "dependencies": {
+    "viem": "^2.48.0"
+  }
+}
