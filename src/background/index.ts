@@ -16,7 +16,9 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     try {
       if (message.type === 'rpc_request') {
         const req = message as RpcRequest;
-        const result = await handleRpcMethod(req.method, req.params ?? [], req.origin, sender);
+        // SECURITY: Derive origin from sender (Chrome-verified), never trust message payload
+        const trustedOrigin = sender.origin ?? (sender.url ? new URL(sender.url).origin : req.origin);
+        const result = await handleRpcMethod(req.method, req.params ?? [], trustedOrigin, sender);
         const response: RpcResponse = {
           source: MSG_SOURCE,
           id: genId(),

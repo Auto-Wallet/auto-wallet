@@ -37,7 +37,7 @@ export async function handleRpcMethod(
       return handleSwitchChain(params);
 
     case 'wallet_addEthereumChain':
-      return handleAddChain(params);
+      return handleAddChain(params, origin);
 
     // --- Signing ---
     case 'eth_sendTransaction':
@@ -77,7 +77,7 @@ async function handleSwitchChain(params: unknown[]): Promise<null> {
   return null;
 }
 
-async function handleAddChain(params: unknown[]): Promise<null> {
+async function handleAddChain(params: unknown[], origin: string): Promise<null> {
   const p = params[0] as {
     chainId: string;
     chainName: string;
@@ -94,10 +94,37 @@ async function handleAddChain(params: unknown[]): Promise<null> {
     return null;
   }
 
+  // SECURITY: Validate RPC URL is HTTPS
+  const rpcUrl = p.rpcUrls?.[0];
+  if (!rpcUrl) throw new Error('No RPC URL provided');
+  if (!rpcUrl.startsWith('https://') && !rpcUrl.startsWith('http://localhost')) {
+    const err = new Error('Only HTTPS RPC URLs are allowed');
+    (err as any).code = 4001;
+    throw err;
+  }
+
+  // SECURITY: Require user confirmation before adding unknown chain
+  const approved = await requestUserConfirmation({
+    id: genId(),
+    method: 'wallet_addEthereumChain',
+    origin,
+    params: [{
+      chainId: p.chainId,
+      chainName: p.chainName,
+      rpcUrl,
+      symbol: p.nativeCurrency?.symbol,
+    }],
+  });
+  if (!approved) {
+    const err = new Error('User rejected adding the network');
+    (err as any).code = 4001;
+    throw err;
+  }
+
   await networkManager.addCustomNetwork({
     chainId,
     name: p.chainName,
-    rpcUrl: p.rpcUrls[0],
+    rpcUrl,
     symbol: p.nativeCurrency.symbol,
     decimals: p.nativeCurrency.decimals,
     blockExplorerUrl: p.blockExplorerUrls?.[0],
@@ -126,6 +153,11 @@ async function handleSendTransaction(params: unknown[], origin: string): Promise
     chainId,
   });
 
+  // SECURITY: Validate tx.from matches active account if specified
+  if (tx.from && tx.from.toLowerCase() !== account.address.toLowerCase()) {
+    throw new Error(`Requested signer ${tx.from} does not match active account ${account.address}`);
+  }
+
   // If not auto-signed, require manual confirmation via popup
   if (!autoSignResult.allowed) {
     const approved = await requestUserConfirmation({
@@ -133,7 +165,9 @@ async function handleSendTransaction(params: unknown[], origin: string): Promise
       method: 'eth_sendTransaction',
       origin,
       params: [tx],
-    });
+      signerAddress: account.address,
+      chainId,
+    } as any);
     if (!approved) {
       const err = new Error('User rejected the transaction');
       (err as any).code = 4001;
@@ -176,35 +210,52 @@ async function handleSendTransaction(params: unknown[], origin: string): Promise
 
 async function handlePersonalSign(params: unknown[], origin: string): Promise<string> {
   const account = keyManager.getAccount();
+  const chainId = networkManager.getActiveChainId();
 
-  // Always require confirmation for message signing
+  // SECURITY: Validate requested address matches active account
+  // personal_sign: params[0] = message, params[1] = address
+  const requestedAddr = params[1] as string | undefined;
+  if (requestedAddr && requestedAddr.toLowerCase() !== account.address.toLowerCase()) {
+    throw new Error(`Requested signer ${requestedAddr} does not match active account ${account.address}`);
+  }
+
   const approved = await requestUserConfirmation({
     id: genId(),
     method: 'personal_sign',
     origin,
     params,
-  });
+    signerAddress: account.address,
+    chainId,
+  } as any);
   if (!approved) {
     const err = new Error('User rejected the request');
     (err as any).code = 4001;
     throw err;
   }
 
-  // personal_sign: params[0] = message, params[1] = address
   const message = params[0] as string;
   return account.signMessage({ message: { raw: message as `0x${string}` } });
 }
 
 async function handleSignTypedData(params: unknown[], origin: string): Promise<string> {
   const account = keyManager.getAccount();
+  const chainId = networkManager.getActiveChainId();
 
-  // Always require confirmation for typed data signing
+  // SECURITY: Validate requested address matches active account
+  // signTypedData: params[0] = address, params[1] = typed data
+  const requestedAddr = params[0] as string | undefined;
+  if (requestedAddr && requestedAddr.toLowerCase() !== account.address.toLowerCase()) {
+    throw new Error(`Requested signer ${requestedAddr} does not match active account ${account.address}`);
+  }
+
   const approved = await requestUserConfirmation({
     id: genId(),
     method: 'eth_signTypedData_v4',
     origin,
     params,
-  });
+    signerAddress: account.address,
+    chainId,
+  } as any);
   if (!approved) {
     const err = new Error('User rejected the request');
     (err as any).code = 4001;

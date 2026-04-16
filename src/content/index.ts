@@ -4,12 +4,14 @@
 import { MSG_SOURCE, type RpcResponse } from '../types/messages';
 
 // Forward messages from page (inpage.js) to background service worker
+// SECURITY: Never trust page-supplied origin — overwrite with real origin from ISOLATED world
 window.addEventListener('message', (event) => {
   if (event.source !== window) return;
   if (event.data?.source !== MSG_SOURCE) return;
   if (event.data?.type !== 'rpc_request') return;
 
-  chrome.runtime.sendMessage(event.data, (response: RpcResponse) => {
+  const sanitized = { ...event.data, origin: window.location.origin };
+  chrome.runtime.sendMessage(sanitized, (response: RpcResponse) => {
     window.postMessage(response, '*');
   });
 });

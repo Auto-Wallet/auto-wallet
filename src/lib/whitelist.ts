@@ -71,9 +71,14 @@ function matchesRule(rule: WhitelistRule, ctx: TxContext): boolean {
   // Chain filter
   if (rule.chainId !== null && rule.chainId !== ctx.chainId) return false;
 
-  // Origin dimension
+  // Origin dimension — STRICT equality on parsed origin to prevent prefix attacks
+  // e.g. rule "https://app.uniswap.org" must NOT match "https://app.uniswap.org.evil.com"
   if (rule.origin !== null) {
-    if (!ctx.origin.startsWith(rule.origin) && ctx.origin !== rule.origin) return false;
+    let ctxOrigin = ctx.origin;
+    let ruleOrigin = rule.origin;
+    try { ctxOrigin = new URL(ctx.origin).origin; } catch {}
+    try { ruleOrigin = new URL(rule.origin).origin; } catch {}
+    if (ctxOrigin !== ruleOrigin) return false;
   }
 
   // Contract address dimension

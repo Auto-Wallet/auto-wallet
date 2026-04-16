@@ -7,6 +7,8 @@ interface PendingRequest {
   method: string;
   origin: string;
   params: any;
+  signerAddress?: string;
+  chainId?: number;
 }
 
 function ConfirmPage() {
@@ -59,6 +61,7 @@ function ConfirmPage() {
   const isTransaction = request.method === 'eth_sendTransaction';
   const isPersonalSign = request.method === 'personal_sign' || request.method === 'eth_sign';
   const isTypedData = request.method === 'eth_signTypedData_v4' || request.method === 'eth_signTypedData';
+  const isAddChain = request.method === 'wallet_addEthereumChain';
 
   const value = tx.value ? (parseInt(tx.value, 16) / 1e18).toFixed(6) : '0';
   const to = tx.to ?? 'Contract creation';
@@ -84,6 +87,28 @@ function ConfirmPage() {
           <span className="confirm-origin-dot" />
           <span className="confirm-origin-text">{domain}</span>
         </div>
+
+        {/* Signer info */}
+        {(request.signerAddress || request.chainId) && (
+          <div className="card" style={{ padding: '8px 12px' }}>
+            <div className="confirm-row">
+              {request.signerAddress && (
+                <div className="confirm-field" style={{ marginBottom: 0 }}>
+                  <span className="confirm-label">Signer</span>
+                  <span className="confirm-value mono" style={{ fontSize: 10 }}>
+                    {request.signerAddress.slice(0, 8)}...{request.signerAddress.slice(-6)}
+                  </span>
+                </div>
+              )}
+              {request.chainId && (
+                <div className="confirm-field" style={{ marginBottom: 0, textAlign: 'right' }}>
+                  <span className="confirm-label">Chain</span>
+                  <span className="confirm-value mono">{request.chainId}</span>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
 
         {/* Method badge */}
         <div style={{ textAlign: 'center', marginBottom: 4 }}>
@@ -140,6 +165,30 @@ function ConfirmPage() {
                 ? request.params[1]
                 : JSON.stringify(request.params?.[1], null, 2)}
             </pre>
+          </div>
+        )}
+
+        {/* Add chain details */}
+        {isAddChain && (
+          <div className="card" style={{ padding: 12 }}>
+            <div className="confirm-field">
+              <span className="confirm-label">Network Name</span>
+              <span className="confirm-value">{tx.chainName}</span>
+            </div>
+            <div className="confirm-row">
+              <div className="confirm-field">
+                <span className="confirm-label">Chain ID</span>
+                <span className="confirm-value mono">{tx.chainId}</span>
+              </div>
+              <div className="confirm-field" style={{ textAlign: 'right' }}>
+                <span className="confirm-label">Symbol</span>
+                <span className="confirm-value">{tx.symbol}</span>
+              </div>
+            </div>
+            <div className="confirm-field" style={{ marginBottom: 0 }}>
+              <span className="confirm-label">RPC URL</span>
+              <span className="confirm-value mono" style={{ fontSize: 10, wordBreak: 'break-all' }}>{tx.rpcUrl}</span>
+            </div>
           </div>
         )}
 
