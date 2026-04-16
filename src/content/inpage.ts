@@ -44,9 +44,8 @@ class AutoWalletProvider {
   async request(args: { method: string; params?: unknown[] }): Promise<unknown> {
     const { method, params = [] } = args;
 
-    // Only cache chainId locally; eth_accounts always goes to background
-    // so it can restore session after page reload
-    if (method === 'eth_chainId') return this._chainId;
+    // No local caching — always forward to background for accurate state
+    // (eth_chainId was previously cached locally, causing stale chain after SW restart or popup switch)
 
     return new Promise((resolve, reject) => {
       const id = genId();
@@ -66,6 +65,8 @@ class AutoWalletProvider {
           // Update local cache
           if (method === 'eth_requestAccounts') {
             this._accounts = event.data.result as string[];
+          } else if (method === 'eth_chainId') {
+            this._chainId = event.data.result as string;
           } else if (method === 'wallet_switchEthereumChain') {
             const p = params[0] as { chainId: string };
             this._chainId = p.chainId;
