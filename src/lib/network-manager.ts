@@ -65,7 +65,7 @@ export async function removeCustomNetwork(chainId: number): Promise<void> {
 }
 
 export async function getClient(chainId?: number): Promise<PublicClient> {
-  const id = chainId ?? activeChainId;
+  const id = chainId ?? await getActiveChainId();
   if (clientCache.has(id)) return clientCache.get(id)!;
   const networks = await getAllNetworks();
   const network = networks.find((n) => n.chainId === id);
@@ -75,6 +75,9 @@ export async function getClient(chainId?: number): Promise<PublicClient> {
   return client;
 }
 
-export function getActiveChainId(): number {
+export async function getActiveChainId(): Promise<number> {
+  // Always read from storage to survive SW restarts
+  const stored = await getItem<number>(STORAGE_KEYS.ACTIVE_CHAIN_ID);
+  if (stored !== null) activeChainId = stored;
   return activeChainId;
 }

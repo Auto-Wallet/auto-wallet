@@ -13,6 +13,7 @@ import { genId } from '../types/messages';
 import { requestUserConfirmation } from './confirm-manager';
 import { requestUnlock } from './unlock-manager';
 import { notifyTx, notifySign } from '../lib/notify';
+import { emitChainChanged } from './events';
 
 // --- RPC Method Router ---
 
@@ -31,10 +32,10 @@ export async function handleRpcMethod(
 
     // --- Chain methods ---
     case 'eth_chainId':
-      return toHex(networkManager.getActiveChainId());
+      return toHex(await networkManager.getActiveChainId());
 
     case 'net_version':
-      return String(networkManager.getActiveChainId());
+      return String(await networkManager.getActiveChainId());
 
     case 'wallet_switchEthereumChain':
       return handleSwitchChain(params);
@@ -96,6 +97,7 @@ async function handleSwitchChain(params: unknown[]): Promise<null> {
   const { chainId } = params[0] as { chainId: string };
   const id = parseInt(chainId, 16);
   await networkManager.switchNetwork(id);
+  emitChainChanged(chainId);
   return null;
 }
 
@@ -153,6 +155,7 @@ async function handleAddChain(params: unknown[], origin: string): Promise<null> 
     isCustom: true,
   });
   await networkManager.switchNetwork(chainId);
+  emitChainChanged(p.chainId);
   return null;
 }
 
@@ -233,7 +236,7 @@ async function handleSendTransaction(params: unknown[], origin: string): Promise
 
 async function handlePersonalSign(params: unknown[], origin: string): Promise<string> {
   const account = await keyManager.getAccount();
-  const chainId = networkManager.getActiveChainId();
+  const chainId = await networkManager.getActiveChainId();
 
   // SECURITY: Validate requested address matches active account
   const requestedAddr = params[1] as string | undefined;
@@ -275,7 +278,7 @@ async function handlePersonalSign(params: unknown[], origin: string): Promise<st
 
 async function handleSignTypedData(params: unknown[], origin: string): Promise<string> {
   const account = await keyManager.getAccount();
-  const chainId = networkManager.getActiveChainId();
+  const chainId = await networkManager.getActiveChainId();
 
   // SECURITY: Validate requested address matches active account
   const requestedAddr = params[0] as string | undefined;

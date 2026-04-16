@@ -10,6 +10,8 @@ import { genId } from '../types/messages';
 import type { WhitelistRule } from '../types/whitelist';
 import type { Network } from '../types/network';
 import { type WalletSettings, DEFAULT_SETTINGS } from '../types/settings';
+import { emitAccountsChanged, emitChainChanged } from './events';
+import { toHex } from 'viem';
 
 /** Handle actions from the Popup UI. */
 export async function handlePopupAction(action: string, payload: any): Promise<unknown> {
@@ -29,6 +31,7 @@ export async function handlePopupAction(action: string, payload: any): Promise<u
       return keyManager.unlock(payload.password);
     case 'lock':
       await keyManager.lock();
+      emitAccountsChanged([]);
       return true;
     case 'getAddress':
       return await keyManager.getAddress();
@@ -36,8 +39,11 @@ export async function handlePopupAction(action: string, payload: any): Promise<u
     // --- Multi-account ---
     case 'listAccounts':
       return keyManager.listAccounts();
-    case 'switchAccount':
-      return keyManager.switchAccount(payload.accountId);
+    case 'switchAccount': {
+      const newAddr = await keyManager.switchAccount(payload.accountId);
+      emitAccountsChanged([newAddr]);
+      return newAddr;
+    }
     case 'renameAccount':
       return keyManager.renameAccount(payload.accountId, payload.label);
     case 'removeAccount':
@@ -147,8 +153,11 @@ export async function handlePopupAction(action: string, payload: any): Promise<u
       return networkManager.getAllNetworks();
     case 'getActiveNetwork':
       return networkManager.getActiveNetwork();
-    case 'switchNetwork':
-      return networkManager.switchNetwork(payload.chainId);
+    case 'switchNetwork': {
+      const net = await networkManager.switchNetwork(payload.chainId);
+      emitChainChanged(toHex(net.chainId));
+      return net;
+    }
     case 'addCustomNetwork':
       return networkManager.addCustomNetwork(payload as Network);
     case 'removeCustomNetwork':
