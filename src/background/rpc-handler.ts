@@ -13,6 +13,7 @@ import { requestUnlock } from './unlock-manager';
 import { notifyTx, notifySign } from '../lib/notify';
 import { emitChainChanged } from './events';
 import { RpcError, userRejection } from '../lib/rpc-error';
+import { validateSigner, validateRpcUrl, parseAddChainParams, parseTxParams } from '../lib/rpc-validation';
 
 // --- Rate limiting for eth_requestAccounts ---
 let lastUnlockPromptTime = 0;
@@ -108,27 +109,19 @@ async function handleSwitchChain(params: unknown[]): Promise<null> {
 }
 
 async function handleAddChain(params: unknown[], origin: string): Promise<null> {
-  const p = params[0] as {
-    chainId: string;
-    chainName: string;
-    rpcUrls: string[];
-    nativeCurrency: { name: string; symbol: string; decimals: number };
-    blockExplorerUrls?: string[];
-  };
-  const chainId = parseInt(p.chainId, 16);
+  const parsed = parseAddChainParams(params);
 
   // If chain already exists, just switch to it
   const all = await networkManager.getAllNetworks();
-  if (all.find((n) => n.chainId === chainId)) {
-    await networkManager.switchNetwork(chainId);
+  if (all.find((n) => n.chainId === parsed.chainId)) {
+    await networkManager.switchNetwork(parsed.chainId);
     return null;
   }
 
   // SECURITY: Validate RPC URL is HTTPS
-  const rpcUrl = p.rpcUrls?.[0];
-  if (!rpcUrl) throw new Error('No RPC URL provided');
-  if (!rpcUrl.startsWith('https://') && !rpcUrl.startsWith('http://localhost')) {
-    throw userRejection('Only HTTPS RPC URLs are allowed');
+  const urlCheck = validateRpcUrl(parsed.rpcUrl);
+  if (!urlCheck.valid) {
+    throw userRejection(urlCheck.reason!);
   }
 
   // SECURITY: Require user confirmation before adding unknown chain
@@ -137,10 +130,10 @@ async function handleAddChain(params: unknown[], origin: string): Promise<null> 
     method: 'wallet_addEthereumChain',
     origin,
     params: [{
-      chainId: p.chainId,
-      chainName: p.chainName,
-      rpcUrl,
-      symbol: p.nativeCurrency?.symbol,
+      chainId: toHex(parsed.chainId),
+      chainName: parsed.chainName,
+      rpcUrl: parsed.rpcUrl,
+      symbol: parsed.symbol,
     }],
   });
   if (!approved) {
@@ -148,16 +141,16 @@ async function handleAddChain(params: unknown[], origin: string): Promise<null> 
   }
 
   await networkManager.addCustomNetwork({
-    chainId,
-    name: p.chainName,
-    rpcUrl,
-    symbol: p.nativeCurrency.symbol,
-    decimals: p.nativeCurrency.decimals,
-    blockExplorerUrl: p.blockExplorerUrls?.[0],
+    chainId: parsed.chainId,
+    name: parsed.chainName,
+    rpcUrl: parsed.rpcUrl,
+    symbol: parsed.symbol,
+    decimals: parsed.decimals,
+    blockExplorerUrl: parsed.blockExplorerUrl,
     isCustom: true,
   });
-  await networkManager.switchNetwork(chainId);
-  emitChainChanged(p.chainId);
+  await networkManager.switchNetwork(parsed.chainId);
+  emitChainChanged(toHex(parsed.chainId));
   return null;
 }
 
@@ -202,23 +195,20 @@ async function handleSendTransaction(params: unknown[], origin: string): Promise
   const chainId = network.chainId;
 
   const tx = params[0] as Record<string, string>;
-  const value = tx.value ?? '0x0';
-  const gasLimit = tx.gas ?? tx.gasLimit ?? null;
+  const parsed = parseTxParams(tx);
 
   // SECURITY: Validate tx.from matches active account if specified
-  if (tx.from && tx.from.toLowerCase() !== account.address.toLowerCase()) {
-    throw new Error(`Requested signer ${tx.from} does not match active account ${account.address}`);
-  }
+  validateSigner(parsed.from ?? undefined, account.address);
 
   const autoSignResult = await checkWhitelistOrConfirm(
     'eth_sendTransaction',
     origin,
     [tx],
     {
-      to: tx.to ?? null,
-      data: tx.data ?? null,
-      value: String(hexToBigInt(value as `0x${string}`)),
-      gasLimit: gasLimit ? String(hexToBigInt(gasLimit as `0x${string}`)) : null,
+      to: parsed.to,
+      data: parsed.data,
+      value: String(parsed.valueBigInt),
+      gasLimit: parsed.gasLimitBigInt !== null ? String(parsed.gasLimitBigInt) : null,
       chainId,
     },
     account.address,
@@ -229,10 +219,10 @@ async function handleSendTransaction(params: unknown[], origin: string): Promise
   const chain = networkManager.buildViemChain(network);
 
   const hash = await client.sendTransaction({
-    to: tx.to as `0x${string}`,
-    value: hexToBigInt(value as `0x${string}`),
-    data: (tx.data as `0x${string}`) ?? undefined,
-    gas: gasLimit ? hexToBigInt(gasLimit as `0x${string}`) : undefined,
+    to: parsed.to as `0x${string}`,
+    value: parsed.valueBigInt,
+    data: (parsed.data as `0x${string}`) ?? undefined,
+    gas: parsed.gasLimitBigInt ?? undefined,
     chain,
   });
 
@@ -243,10 +233,10 @@ async function handleSendTransaction(params: unknown[], origin: string): Promise
     timestamp: Date.now(),
     chainId,
     from: account.address,
-    to: tx.to ?? '',
-    value: String(hexToBigInt(value as `0x${string}`)),
+    to: parsed.to ?? '',
+    value: String(parsed.valueBigInt),
     hash,
-    method: tx.data?.slice(0, 10) ?? undefined,
+    method: parsed.methodSelector,
     origin,
     autoSigned: autoSignResult.allowed,
     ruleId: autoSignResult.rule?.id,
@@ -265,10 +255,7 @@ async function handlePersonalSign(params: unknown[], origin: string): Promise<st
   const chainId = await networkManager.getActiveChainId();
 
   // SECURITY: Validate requested address matches active account
-  const requestedAddr = params[1] as string | undefined;
-  if (requestedAddr && requestedAddr.toLowerCase() !== account.address.toLowerCase()) {
-    throw new Error(`Requested signer ${requestedAddr} does not match active account ${account.address}`);
-  }
+  validateSigner(params[1] as string | undefined, account.address);
 
   const autoSignResult = await checkWhitelistOrConfirm(
     'personal_sign',
@@ -289,10 +276,7 @@ async function handleSignTypedData(params: unknown[], origin: string): Promise<s
   const chainId = await networkManager.getActiveChainId();
 
   // SECURITY: Validate requested address matches active account
-  const requestedAddr = params[0] as string | undefined;
-  if (requestedAddr && requestedAddr.toLowerCase() !== account.address.toLowerCase()) {
-    throw new Error(`Requested signer ${requestedAddr} does not match active account ${account.address}`);
-  }
+  validateSigner(params[0] as string | undefined, account.address);
 
   const autoSignResult = await checkWhitelistOrConfirm(
     'eth_signTypedData_v4',

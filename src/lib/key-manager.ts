@@ -1,24 +1,24 @@
-import { privateKeyToAccount, generatePrivateKey, type PrivateKeyAccount } from 'viem/accounts';
-import { mnemonicToAccount } from 'viem/accounts';
+// IO shell: chrome.storage + session management.
+// Pure decision logic lives in key-manager.core.ts.
+
+import { generatePrivateKey, type PrivateKeyAccount } from 'viem/accounts';
 import { encrypt, decrypt, type EncryptedData } from './crypto';
 import { getItem, setItem, removeItem, STORAGE_KEYS } from './storage';
 import { type WalletSettings, DEFAULT_SETTINGS } from '../types/settings';
+import {
+  decryptToAccount,
+  shouldAutoLock,
+  autoLockMsFromMinutes,
+  resolveActiveAccount,
+  nextAccountLabel,
+  toAccountInfo,
+  type StoredAccount,
+  type AccountInfo,
+  type SessionData,
+} from './key-manager.core';
 
-// --- Types ---
-
-export interface StoredAccount {
-  id: string;
-  label: string;
-  encrypted: EncryptedData;
-  address: string;
-  createdAt: number;
-}
-
-export interface AccountInfo {
-  id: string;
-  label: string;
-  address: string;
-}
+// Re-export types for backward compatibility
+export type { StoredAccount, AccountInfo } from './key-manager.core';
 
 // --- In-memory state (rebuilt from session storage on SW wake) ---
 
@@ -31,12 +31,6 @@ let lastActivity: number = Date.now();
 // --- Session persistence (survives SW restarts, cleared on browser close) ---
 
 const SESSION_KEY = 'aw_session';
-
-interface SessionData {
-  masterPassword: string;
-  activeAccountId: string;
-  lastActivity: number;
-}
 
 async function saveSession(): Promise<void> {
   if (!masterPassword || !activeAccountId) return;
@@ -61,20 +55,18 @@ async function restoreFromSession(): Promise<boolean> {
   const session = await loadSession();
   if (!session) return false;
 
-  // Check if auto-lock timeout has passed
+  // Check if auto-lock timeout has passed (pure decision)
   const autoLockMs = await getAutoLockMs();
-  if (autoLockMs > 0) {
-    const elapsed = Date.now() - session.lastActivity;
-    if (elapsed >= autoLockMs) {
-      await clearSession();
-      return false;
-    }
+  if (shouldAutoLock(session.lastActivity, autoLockMs)) {
+    await clearSession();
+    return false;
   }
 
   // Re-decrypt the active account
   const accounts = await getStoredAccounts();
-  const target = accounts.find((a) => a.id === session.activeAccountId);
-  if (!target) {
+  const target = resolveActiveAccount(accounts, session.activeAccountId);
+  if (!target || target.id !== session.activeAccountId) {
+    // If we couldn't find the exact saved account, session is stale
     await clearSession();
     return false;
   }
@@ -98,13 +90,11 @@ async function restoreFromSession(): Promise<boolean> {
 async function getAutoLockMs(): Promise<number> {
   const settings = await getItem<WalletSettings>(STORAGE_KEYS.SETTINGS);
   const minutes = settings?.autoLockMinutes ?? DEFAULT_SETTINGS.autoLockMinutes;
-  if (minutes === 0) return 0; // never lock
-  return minutes * 60 * 1000;
+  return autoLockMsFromMinutes(minutes);
 }
 
 function resetLockTimer() {
   if (lockTimer) clearTimeout(lockTimer);
-  // Update session activity timestamp
   saveSession();
   getAutoLockMs().then((ms) => {
     if (ms > 0) lockTimer = setTimeout(lock, ms);
@@ -119,13 +109,6 @@ async function getStoredAccounts(): Promise<StoredAccount[]> {
 
 async function saveStoredAccounts(accounts: StoredAccount[]): Promise<void> {
   await setItem(STORAGE_KEYS.ACCOUNTS, accounts);
-}
-
-function decryptToAccount(plaintext: string): PrivateKeyAccount {
-  if (plaintext.startsWith('0x')) {
-    return privateKeyToAccount(plaintext as `0x${string}`);
-  }
-  return mnemonicToAccount(plaintext) as unknown as PrivateKeyAccount;
 }
 
 function getMasterPassword(): string {
@@ -158,20 +141,19 @@ async function appendAndActivate(
   return account.address;
 }
 
-async function nextLabel(): Promise<string> {
-  return `Account ${(await getStoredAccounts()).length + 1}`;
+async function getNextLabel(): Promise<string> {
+  const accounts = await getStoredAccounts();
+  return nextAccountLabel(accounts.length);
 }
 
 // --- Public API ---
 
 export async function isUnlocked(): Promise<boolean> {
   if (activeAccountId !== null && unlockedAccounts.size > 0) return true;
-  // Try to restore from session (SW might have restarted)
   return restoreFromSession();
 }
 
 export async function getAccount(): Promise<PrivateKeyAccount> {
-  // Try restore from session if SW just restarted
   if (!activeAccountId || unlockedAccounts.size === 0) {
     await restoreFromSession();
   }
@@ -195,7 +177,7 @@ export async function getActiveAccountId(): Promise<string> {
 
 export async function listAccounts(): Promise<AccountInfo[]> {
   const stored = await getStoredAccounts();
-  return stored.map((a) => ({ id: a.id, label: a.label, address: a.address }));
+  return stored.map(toAccountInfo);
 }
 
 export async function switchAccount(accountId: string): Promise<string> {
@@ -219,18 +201,18 @@ export async function switchAccount(accountId: string): Promise<string> {
 
 export async function createWallet(password: string, label?: string): Promise<string> {
   const privateKey = generatePrivateKey();
-  const account = privateKeyToAccount(privateKey);
-  return appendAndActivate(privateKey, account, label ?? await nextLabel(), password);
+  const account = decryptToAccount(privateKey);
+  return appendAndActivate(privateKey, account, label ?? await getNextLabel(), password);
 }
 
 export async function importPrivateKey(privateKey: `0x${string}`, password: string, label?: string): Promise<string> {
-  const account = privateKeyToAccount(privateKey);
-  return appendAndActivate(privateKey, account, label ?? await nextLabel(), password);
+  const account = decryptToAccount(privateKey);
+  return appendAndActivate(privateKey, account, label ?? await getNextLabel(), password);
 }
 
 export async function importMnemonic(mnemonic: string, password: string, label?: string): Promise<string> {
-  const account = mnemonicToAccount(mnemonic);
-  return appendAndActivate(mnemonic, account as unknown as PrivateKeyAccount, label ?? await nextLabel(), password);
+  const account = decryptToAccount(mnemonic);
+  return appendAndActivate(mnemonic, account, label ?? await getNextLabel(), password);
 }
 
 // ===== Add account (reuses master password) =====
@@ -238,20 +220,20 @@ export async function importMnemonic(mnemonic: string, password: string, label?:
 export async function addAccountGenerate(label?: string): Promise<string> {
   const pw = getMasterPassword();
   const privateKey = generatePrivateKey();
-  const account = privateKeyToAccount(privateKey);
-  return appendAndActivate(privateKey, account, label ?? await nextLabel(), pw);
+  const account = decryptToAccount(privateKey);
+  return appendAndActivate(privateKey, account, label ?? await getNextLabel(), pw);
 }
 
 export async function addAccountPrivateKey(privateKey: `0x${string}`, label?: string): Promise<string> {
   const pw = getMasterPassword();
-  const account = privateKeyToAccount(privateKey);
-  return appendAndActivate(privateKey, account, label ?? await nextLabel(), pw);
+  const account = decryptToAccount(privateKey);
+  return appendAndActivate(privateKey, account, label ?? await getNextLabel(), pw);
 }
 
 export async function addAccountMnemonic(mnemonic: string, label?: string): Promise<string> {
   const pw = getMasterPassword();
-  const account = mnemonicToAccount(mnemonic);
-  return appendAndActivate(mnemonic, account as unknown as PrivateKeyAccount, label ?? await nextLabel(), pw);
+  const account = decryptToAccount(mnemonic);
+  return appendAndActivate(mnemonic, account, label ?? await getNextLabel(), pw);
 }
 
 // ===== Unlock / Lock =====
@@ -279,7 +261,7 @@ export async function unlock(password: string): Promise<string> {
   }
 
   const savedActiveId = await getItem<string>(STORAGE_KEYS.ACTIVE_ACCOUNT_ID);
-  const targetAccount = accounts.find((a) => a.id === savedActiveId) ?? accounts[0];
+  const targetAccount = resolveActiveAccount(accounts, savedActiveId) ?? accounts[0];
 
   const plaintext = await decrypt(targetAccount.encrypted, password);
   const viemAccount = decryptToAccount(plaintext);
@@ -345,9 +327,5 @@ export async function exportPrivateKey(accountId: string, password: string): Pro
   const accounts = await getStoredAccounts();
   const target = accounts.find((a) => a.id === accountId);
   if (!target) throw new Error('Account not found');
-  const plaintext = await decrypt(target.encrypted, password);
-  if (!plaintext.startsWith('0x')) {
-    return plaintext;
-  }
-  return plaintext;
+  return decrypt(target.encrypted, password);
 }
