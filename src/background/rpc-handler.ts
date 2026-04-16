@@ -230,7 +230,7 @@ async function handleSendTransaction(params: unknown[], origin: string): Promise
     status: 'pending',
   });
 
-  notifyTx(hash, origin, autoSignResult.allowed);
+  notifyTx(hash, origin, autoSignResult.allowed, network.blockExplorerUrl);
   return hash;
 }
 
