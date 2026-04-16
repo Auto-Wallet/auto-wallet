@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Auto Wallet",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "description": "Minimal auto-signing wallet for EVM chains",
   "permissions": ["storage", "activeTab", "windows", "notifications"],
   "background": {
