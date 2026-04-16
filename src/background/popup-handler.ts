@@ -28,7 +28,7 @@ export async function handlePopupAction(action: string, payload: any): Promise<u
     case 'unlock':
       return keyManager.unlock(payload.password);
     case 'lock':
-      keyManager.lock();
+      await keyManager.lock();
       return true;
     case 'getAddress':
       return keyManager.getAddress();

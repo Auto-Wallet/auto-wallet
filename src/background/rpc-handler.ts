@@ -67,14 +67,14 @@ export async function handleRpcMethod(
 
 // --- Handlers ---
 
-function handleAccounts(): string[] {
-  if (!keyManager.isUnlocked()) return [];
+async function handleAccounts(): Promise<string[]> {
+  if (!(await keyManager.isUnlocked())) return [];
   return [keyManager.getAddress()];
 }
 
 async function handleRequestAccounts(origin: string): Promise<string[]> {
   // If already unlocked, return accounts directly
-  if (keyManager.isUnlocked()) return [keyManager.getAddress()];
+  if (await keyManager.isUnlocked()) return [keyManager.getAddress()];
 
   // Check if wallet exists
   const hasWallet = await keyManager.hasWallet();
@@ -82,7 +82,7 @@ async function handleRequestAccounts(origin: string): Promise<string[]> {
 
   // Wallet is locked — prompt user to unlock
   const unlocked = await requestUnlock(origin);
-  if (!unlocked || !keyManager.isUnlocked()) {
+  if (!unlocked || !(await keyManager.isUnlocked())) {
     const err = new Error('User rejected the connection request');
     (err as any).code = 4001;
     throw err;
