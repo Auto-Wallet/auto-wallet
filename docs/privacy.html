@@ -1,0 +1,208 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Auto Wallet — Privacy Policy</title>
+<meta name="description" content="Privacy policy for the Auto Wallet Chrome extension." />
+<style>
+  :root {
+    --fg: #0f172a;
+    --muted: #475569;
+    --bg: #ffffff;
+    --card: #f8fafc;
+    --border: #e2e8f0;
+    --accent: #2563eb;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --fg: #e2e8f0;
+      --muted: #94a3b8;
+      --bg: #0b1220;
+      --card: #111a2e;
+      --border: #1f2a44;
+      --accent: #60a5fa;
+    }
+  }
+  html, body { background: var(--bg); color: var(--fg); }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Plus Jakarta Sans",
+      Roboto, "Helvetica Neue", Arial, sans-serif;
+    line-height: 1.65;
+    margin: 0;
+    padding: 48px 20px 96px;
+    -webkit-font-smoothing: antialiased;
+  }
+  main { max-width: 760px; margin: 0 auto; }
+  header { margin-bottom: 32px; }
+  h1 { font-size: 32px; margin: 0 0 8px; letter-spacing: -0.01em; }
+  h2 { font-size: 20px; margin: 36px 0 10px; letter-spacing: -0.01em; }
+  h3 { font-size: 16px; margin: 22px 0 6px; }
+  p, li { color: var(--fg); }
+  .muted { color: var(--muted); }
+  .meta { font-size: 14px; color: var(--muted); }
+  ul { padding-left: 20px; }
+  li { margin: 6px 0; }
+  code {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 1px 6px;
+    font-family: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 0.92em;
+  }
+  .card {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 18px 20px;
+    margin: 16px 0;
+  }
+  a { color: var(--accent); }
+  table { border-collapse: collapse; width: 100%; margin-top: 8px; font-size: 14px; }
+  th, td { text-align: left; padding: 10px 12px; border-bottom: 1px solid var(--border); vertical-align: top; }
+  th { color: var(--muted); font-weight: 600; }
+  footer { margin-top: 48px; padding-top: 24px; border-top: 1px solid var(--border); font-size: 14px; color: var(--muted); }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <h1>Auto Wallet — Privacy Policy</h1>
+    <p class="meta">Last updated: 2026-04-18</p>
+  </header>
+
+  <p>
+    Auto Wallet (the “Extension”) is an open-source, self-custodial Chrome
+    extension wallet for EVM-compatible blockchains. This policy explains what
+    data the Extension processes, where it is stored, and what it is used for.
+    The Extension is operated solely by the user on their own device.
+  </p>
+
+  <div class="card">
+    <strong>Plain-language summary</strong>
+    <ul>
+      <li>We do <strong>not</strong> collect, transmit, sell, or share any personal information.</li>
+      <li>We do <strong>not</strong> run any servers, accounts, analytics, or telemetry.</li>
+      <li>Your private keys and mnemonics are encrypted with your password and stored only in your browser.</li>
+      <li>Network requests are sent directly from your browser to the public services you configure (RPC endpoints) or that are required to display token icons.</li>
+    </ul>
+  </div>
+
+  <h2>1. Data the Extension Processes</h2>
+  <p>The following data is created or handled by the Extension. All of it stays on your device unless explicitly noted.</p>
+  <table>
+    <thead>
+      <tr><th>Category</th><th>Examples</th><th>Where it lives</th></tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>Wallet secrets</td>
+        <td>Private keys, mnemonics (seed phrases)</td>
+        <td>Encrypted with AES-256-GCM (key derived from your password using PBKDF2, 600,000 iterations) and stored locally via <code>chrome.storage.local</code>. Never transmitted.</td>
+      </tr>
+      <tr>
+        <td>Wallet configuration</td>
+        <td>Account names and addresses, custom networks, custom tokens, whitelist (auto-sign) rules, transaction history records, settings such as auto-lock timeout</td>
+        <td>Stored locally via <code>chrome.storage.local</code>. Never transmitted.</td>
+      </tr>
+      <tr>
+        <td>dApp interaction context</td>
+        <td>Origin (URL) of the active tab when a dApp requests an action; transaction parameters supplied by the dApp</td>
+        <td>Used in-memory by the Extension to show confirmation prompts and evaluate whitelist rules. The origin is provided by Chrome (<code>sender.origin</code>) and is not collected by us.</td>
+      </tr>
+      <tr>
+        <td>Blockchain RPC traffic</td>
+        <td>Balance queries, transaction broadcasts, calls to read on-chain state</td>
+        <td>Sent directly from your browser to the RPC endpoint configured for the active network. The Extension does not proxy or log these requests.</td>
+      </tr>
+      <tr>
+        <td>Token icon requests</td>
+        <td>HTTP GET to public, static asset URLs to display token logos</td>
+        <td>Sent directly from your browser to <code>raw.githubusercontent.com</code> (Trust Wallet community assets repository). No identifiers are attached by the Extension.</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <h2>2. What We Do Not Do</h2>
+  <ul>
+    <li>We do not collect, store, or transmit personal information, IP addresses, browsing history, or wallet addresses.</li>
+    <li>We do not operate any backend servers, databases, or accounts.</li>
+    <li>We do not include analytics, telemetry, crash reporting, advertising, or tracking SDKs.</li>
+    <li>We do not sell or share data with third parties — there is no data to sell or share.</li>
+  </ul>
+
+  <h2>3. Third-Party Services</h2>
+  <p>
+    Because Auto Wallet is a wallet, it must communicate with blockchain networks. These requests go directly from your browser
+    to third parties that you have either configured yourself or that the Extension uses to show token icons. Their respective
+    privacy policies apply to those interactions.
+  </p>
+  <ul>
+    <li>
+      <strong>RPC providers:</strong> The Extension ships with default public RPC URLs for several EVM chains (e.g.
+      <code>cloudflare-eth.com</code>, <code>polygon-rpc.com</code>, <code>arb1.arbitrum.io</code>,
+      <code>mainnet.optimism.io</code>, <code>bsc-dataseed.binance.org</code>, <code>api.avax.network</code>). You can
+      change any of these or add your own networks. Whoever operates the RPC endpoint you choose can see the requests
+      your browser sends to them.
+    </li>
+    <li>
+      <strong>Token icons:</strong> Token logos are fetched as static images from
+      <code>raw.githubusercontent.com</code> (Trust Wallet community asset repository). GitHub may log standard request
+      metadata as described in their privacy policy.
+    </li>
+  </ul>
+
+  <h2>4. Permissions Used and Why</h2>
+  <table>
+    <thead>
+      <tr><th>Permission</th><th>Why the Extension needs it</th></tr>
+    </thead>
+    <tbody>
+      <tr><td><code>storage</code></td><td>To save your encrypted wallet, accounts, networks, tokens, whitelist rules and settings on your device.</td></tr>
+      <tr><td><code>activeTab</code></td><td>To know which website is asking the wallet to perform an action, so the Extension can match origin-based whitelist rules and display the requesting site in confirmation prompts.</td></tr>
+      <tr><td><code>windows</code></td><td>To open the transaction confirmation and unlock pop-up windows next to your browser window.</td></tr>
+      <tr><td><code>notifications</code></td><td>To show desktop notifications about transaction status (e.g. submitted, confirmed, failed).</td></tr>
+      <tr><td>Host access (<code>&lt;all_urls&gt;</code>)</td><td>Required so the Extension can inject the EIP-1193 / EIP-6963 wallet provider into web pages, which is how dApps detect and talk to the wallet. The injected script does nothing until a page actively requests a wallet action.</td></tr>
+    </tbody>
+  </table>
+
+  <h2>5. Security</h2>
+  <ul>
+    <li>Wallet secrets are encrypted with AES-256-GCM using a key derived from your password via PBKDF2 (SHA-256, 600,000 iterations) and a random per-wallet salt.</li>
+    <li>The decrypted key only exists in memory while the wallet is unlocked, and is cleared when the configurable auto-lock timeout fires or when you lock the wallet manually.</li>
+    <li>Non-whitelisted transactions require explicit user approval through a confirmation pop-up. Gas-limit and value caps are enforced as additional safety nets.</li>
+    <li>The Extension uses <code>sender.origin</code> from Chrome (not the page-supplied value) to identify the calling site, which prevents origin spoofing by malicious pages.</li>
+  </ul>
+  <p>No system can be guaranteed to be 100% secure. You are responsible for keeping your password and seed phrase safe. If you lose them, your funds cannot be recovered.</p>
+
+  <h2>6. Children</h2>
+  <p>The Extension is not directed to children under 13, and we do not knowingly process information from children.</p>
+
+  <h2>7. Data Retention and Your Choices</h2>
+  <p>
+    Because all data lives in your browser, you are in full control. You can remove all data by uninstalling the
+    Extension or by using your browser’s “Clear browsing data” for extension storage. Removing the Extension also removes
+    your encrypted wallet — make sure you have backed up your seed phrase first.
+  </p>
+
+  <h2>8. Changes to This Policy</h2>
+  <p>
+    We may update this policy if the Extension changes the way it processes data. The “Last updated” date at the top of
+    this page reflects the most recent revision. Substantive changes will be noted in the project repository’s release
+    notes.
+  </p>
+
+  <h2>9. Contact</h2>
+  <p>
+    Questions or concerns about this policy can be raised via the project’s public issue tracker:
+    <a href="https://github.com/Auto-Wallet/auto-wallet/issues">github.com/Auto-Wallet/auto-wallet/issues</a>.
+  </p>
+
+  <footer>
+    Auto Wallet is open-source software released under the MIT License. Source code:
+    <a href="https://github.com/Auto-Wallet/auto-wallet">github.com/Auto-Wallet/auto-wallet</a>.
+  </footer>
+</main>
+</body>
+</html>
