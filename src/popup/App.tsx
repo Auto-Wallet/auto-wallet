@@ -110,7 +110,7 @@ export default function App() {
         {page === 'loading' && <div className="loading-page"><div className="spinner" /></div>}
         {page === 'setup' && <SetupPage onDone={() => nav('account')} />}
         {page === 'unlock' && <UnlockPage onUnlock={() => nav('account')} />}
-        {page === 'account' && <AccountPage onLock={() => nav('unlock')} />}
+        {page === 'account' && <AccountPage key={activeAccount?.id ?? 'none'} onLock={() => nav('unlock')} />}
         {page === 'whitelist' && <WhitelistPage />}
         {page === 'networks' && <NetworkPage />}
         {page === 'txlog' && <TxLogPage />}
