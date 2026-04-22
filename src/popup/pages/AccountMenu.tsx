@@ -13,6 +13,7 @@ export function AccountMenu({ onSwitch, onClose }: { onSwitch: () => void; onClo
   const [loading, setLoading] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editLabel, setEditLabel] = useState('');
+  const [copiedId, setCopiedId] = useState<string | null>(null);
 
   useEffect(() => { load(); }, []);
 
@@ -64,6 +65,12 @@ export function AccountMenu({ onSwitch, onClose }: { onSwitch: () => void; onClo
     } catch (e: any) { setError(e.message); }
   }
 
+  async function handleCopy(id: string, address: string) {
+    await navigator.clipboard.writeText(address);
+    setCopiedId(id);
+    setTimeout(() => setCopiedId((curr) => (curr === id ? null : curr)), 1500);
+  }
+
   async function handleLock() {
     await callBackground('lock');
     window.location.reload();
@@ -93,6 +100,9 @@ export function AccountMenu({ onSwitch, onClose }: { onSwitch: () => void; onClo
                   </span>
                 </button>
                 <div className="account-menu-item-actions">
+                  <button onClick={(e) => { e.stopPropagation(); handleCopy(a.id, a.address); }}
+                    className="btn-ghost" style={{ fontSize: 9, padding: '2px 4px' }}
+                    title="Copy address">{copiedId === a.id ? 'Copied' : 'Copy'}</button>
                   <button onClick={(e) => { e.stopPropagation(); setEditingId(a.id); setEditLabel(a.label); }}
                     className="btn-ghost" style={{ fontSize: 9, padding: '2px 4px' }}>Rename</button>
                   {accounts.length > 1 && (
