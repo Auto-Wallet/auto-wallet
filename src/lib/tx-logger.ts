@@ -13,6 +13,17 @@ export interface TxLogEntry {
   autoSigned: boolean; // true = matched whitelist
   ruleId?: string;     // which whitelist rule matched
   status: 'pending' | 'confirmed' | 'failed';
+
+  // Fee values requested at broadcast time (decimal strings)
+  gasLimit?: string;             // gas units
+  maxFeePerGas?: string;         // wei
+  maxPriorityFeePerGas?: string; // wei
+  gasPrice?: string;             // wei (legacy)
+
+  // Actual fee data filled in once the receipt is mined
+  gasUsed?: string;              // gas units
+  effectiveGasPrice?: string;    // wei
+  feeWei?: string;               // gasUsed * effectiveGasPrice (wei)
 }
 
 const MAX_LOG_SIZE = 200;

@@ -5,7 +5,7 @@ import * as tokenManager from '../lib/token-manager';
 import * as txLogger from '../lib/tx-logger';
 import { getClient } from '../lib/network-manager';
 import { getItem, setItem, STORAGE_KEYS } from '../lib/storage';
-import { formatEther, parseEther, parseUnits, encodeFunctionData, erc20Abi } from 'viem';
+import { formatEther, parseEther, parseUnits, encodeFunctionData, erc20Abi, hexToBigInt } from 'viem';
 import { genId } from '../types/messages';
 import type { WhitelistRule } from '../types/whitelist';
 import type { Network } from '../types/network';
@@ -91,11 +91,13 @@ export async function handlePopupAction(action: string, payload: any): Promise<u
       const client = await networkManager.getWalletClient(account);
       const chain = networkManager.buildViemChain(network);
       const value = parseEther(payload.amount);
+      const fee = applyFeeOverride(payload.fee);
       const hash = await client.sendTransaction({
         to: payload.to as `0x${string}`,
         value,
         chain,
-      });
+        ...fee.txArgs,
+      } as any);
       const logId = genId();
       await txLogger.appendLog({
         id: logId,
@@ -106,8 +108,9 @@ export async function handlePopupAction(action: string, payload: any): Promise<u
         value: String(value),
         hash,
         origin: 'Auto Wallet',
-        autoSigned: true,
+        autoSigned: false,
         status: 'pending',
+        ...fee.logFields,
       });
       pollTxReceipt(logId, network.chainId, hash);
       return hash;
@@ -125,12 +128,14 @@ export async function handlePopupAction(action: string, payload: any): Promise<u
         functionName: 'transfer',
         args: [payload.to as `0x${string}`, amount],
       });
+      const fee = applyFeeOverride(payload.fee);
       const hash = await client.sendTransaction({
         to: payload.tokenAddress as `0x${string}`,
         data,
         value: 0n,
         chain,
-      });
+        ...fee.txArgs,
+      } as any);
       const logId = genId();
       await txLogger.appendLog({
         id: logId,
@@ -142,8 +147,9 @@ export async function handlePopupAction(action: string, payload: any): Promise<u
         hash,
         method: data.slice(0, 10),
         origin: 'Auto Wallet',
-        autoSigned: true,
+        autoSigned: false,
         status: 'pending',
+        ...fee.logFields,
       });
       pollTxReceipt(logId, network.chainId, hash);
       return hash;
@@ -184,6 +190,10 @@ export async function handlePopupAction(action: string, payload: any): Promise<u
     case 'getTokenBalance':
       return tokenManager.getTokenBalance(payload.token, await keyManager.getAddress());
 
+    // --- Fee suggestions for the confirm popup ---
+    case 'getFeeSuggestions':
+      return getFeeSuggestions(payload ?? {});
+
     // --- Tx Log ---
     case 'getTxLog':
       return txLogger.getLog();
@@ -207,6 +217,130 @@ export async function handlePopupAction(action: string, payload: any): Promise<u
   }
 }
 
+// --- Fee override application ---
+
+interface FeeOverrideInput {
+  type: 'eip1559' | 'legacy';
+  gas: string | null;
+  maxFeePerGas: string | null;
+  maxPriorityFeePerGas: string | null;
+  gasPrice: string | null;
+}
+
+function applyFeeOverride(fee: FeeOverrideInput | null | undefined): {
+  txArgs: Record<string, bigint>;
+  logFields: Partial<txLogger.TxLogEntry>;
+} {
+  if (!fee) return { txArgs: {}, logFields: {} };
+  const txArgs: Record<string, bigint> = {};
+  const logFields: Partial<txLogger.TxLogEntry> = {};
+
+  if (fee.gas) {
+    const gas = BigInt(fee.gas);
+    txArgs.gas = gas;
+    logFields.gasLimit = gas.toString();
+  }
+  if (fee.type === 'eip1559') {
+    if (fee.maxFeePerGas) {
+      const v = BigInt(fee.maxFeePerGas);
+      txArgs.maxFeePerGas = v;
+      logFields.maxFeePerGas = v.toString();
+    }
+    if (fee.maxPriorityFeePerGas) {
+      const v = BigInt(fee.maxPriorityFeePerGas);
+      txArgs.maxPriorityFeePerGas = v;
+      logFields.maxPriorityFeePerGas = v.toString();
+    }
+  } else if (fee.gasPrice) {
+    const v = BigInt(fee.gasPrice);
+    txArgs.gasPrice = v;
+    logFields.gasPrice = v.toString();
+  }
+  return { txArgs, logFields };
+}
+
+// --- Fee suggestions for the confirm popup ---
+
+interface FeeSuggestionsRequest {
+  to?: string;
+  from?: string;
+  data?: string;
+  value?: string;
+}
+
+export interface FeeSuggestions {
+  chainId: number;
+  symbol: string;
+  decimals: number;
+  type: 'eip1559' | 'legacy';
+  gasEstimate: string | null;          // gas units, decimal
+  baseFeePerGas: string | null;        // wei, decimal
+  maxFeePerGas: string | null;         // wei, decimal — suggested
+  maxPriorityFeePerGas: string | null; // wei, decimal — suggested
+  gasPrice: string | null;             // wei, decimal — suggested (legacy only)
+}
+
+async function getFeeSuggestions(req: FeeSuggestionsRequest): Promise<FeeSuggestions> {
+  const network = await networkManager.getActiveNetwork();
+  const client = await getClient(network.chainId);
+
+  let baseFee: bigint | null = null;
+  let maxFee: bigint | null = null;
+  let priority: bigint | null = null;
+  let gasPrice: bigint | null = null;
+  let type: 'eip1559' | 'legacy' = 'legacy';
+
+  // Detect EIP-1559 by reading baseFeePerGas on the latest block
+  try {
+    const block = await client.getBlock({ blockTag: 'latest' });
+    if (block.baseFeePerGas !== undefined && block.baseFeePerGas !== null) {
+      baseFee = block.baseFeePerGas;
+      type = 'eip1559';
+      const fees = await client.estimateFeesPerGas();
+      maxFee = fees.maxFeePerGas ?? null;
+      priority = fees.maxPriorityFeePerGas ?? null;
+    }
+  } catch {
+    // ignore — fall through to legacy
+  }
+
+  if (type === 'legacy') {
+    try {
+      gasPrice = await client.getGasPrice();
+    } catch {
+      gasPrice = null;
+    }
+  }
+
+  // Estimate gas if we have enough info
+  let gasEstimate: bigint | null = null;
+  if (req.to || req.data) {
+    try {
+      const fromAddr = req.from ?? (await keyManager.getAddress());
+      gasEstimate = await client.estimateGas({
+        account: fromAddr as `0x${string}`,
+        to: req.to as `0x${string}` | undefined,
+        data: (req.data as `0x${string}`) ?? undefined,
+        value: req.value ? hexToBigInt(req.value as `0x${string}`) : 0n,
+      });
+    } catch {
+      gasEstimate = null;
+    }
+  }
+
+  return {
+    chainId: network.chainId,
+    symbol: network.symbol,
+    decimals: network.decimals,
+    type,
+    gasEstimate: gasEstimate?.toString() ?? null,
+    baseFeePerGas: baseFee?.toString() ?? null,
+    maxFeePerGas: maxFee?.toString() ?? null,
+    maxPriorityFeePerGas: priority?.toString() ?? null,
+    gasPrice: gasPrice?.toString() ?? null,
+  };
+}
+
 // --- Tx receipt polling (shared with rpc-handler, but kept simple as a local helper) ---
 
 function pollTxReceipt(logId: string, chainId: number, hash: string): void {
@@ -221,7 +355,17 @@ function pollTxReceipt(logId: string, chainId: number, hash: string): void {
       const receipt = await client.getTransactionReceipt({ hash: hash as `0x${string}` });
       if (receipt) {
         const status = receipt.status === 'success' ? 'confirmed' : 'failed';
-        await txLogger.updateLogEntry(logId, { status });
+        const gasUsed = receipt.gasUsed;
+        const effectiveGasPrice = receipt.effectiveGasPrice;
+        const fee = gasUsed !== undefined && effectiveGasPrice !== undefined
+          ? gasUsed * effectiveGasPrice
+          : null;
+        await txLogger.updateLogEntry(logId, {
+          status,
+          gasUsed: gasUsed?.toString(),
+          effectiveGasPrice: effectiveGasPrice?.toString(),
+          feeWei: fee?.toString(),
+        });
         clearInterval(timer);
       }
     } catch {

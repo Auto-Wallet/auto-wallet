@@ -8,7 +8,7 @@ import * as whitelist from '../lib/whitelist';
 import * as txLogger from '../lib/tx-logger';
 import * as tokenManager from '../lib/token-manager';
 import { genId } from '../types/messages';
-import { requestUserConfirmation } from './confirm-manager';
+import { requestUserConfirmation, type FeeOverride } from './confirm-manager';
 import { requestUnlock } from './unlock-manager';
 import { notifyTx, notifySign } from '../lib/notify';
 import { emitChainChanged } from './events';
@@ -125,7 +125,7 @@ async function handleAddChain(params: unknown[], origin: string): Promise<null> 
   }
 
   // SECURITY: Require user confirmation before adding unknown chain
-  const approved = await requestUserConfirmation({
+  const { approved } = await requestUserConfirmation({
     id: genId(),
     method: 'wallet_addEthereumChain',
     origin,
@@ -162,7 +162,7 @@ async function checkWhitelistOrConfirm(
   params: unknown[],
   ctx: { to: string | null; data: string | null; value: string; gasLimit: string | null; chainId: number },
   signerAddress: string,
-): Promise<whitelist.AutoSignCheckResult> {
+): Promise<{ autoSignResult: whitelist.AutoSignCheckResult; feeOverride: FeeOverride | null }> {
   const autoSignResult = await whitelist.checkAutoSign({
     origin,
     to: ctx.to,
@@ -172,21 +172,22 @@ async function checkWhitelistOrConfirm(
     chainId: ctx.chainId,
   });
 
-  if (!autoSignResult.allowed) {
-    const approved = await requestUserConfirmation({
-      id: genId(),
-      method,
-      origin,
-      params,
-      signerAddress,
-      chainId: ctx.chainId,
-    } as any);
-    if (!approved) {
-      throw userRejection('User rejected the request');
-    }
+  if (autoSignResult.allowed) {
+    return { autoSignResult, feeOverride: null };
   }
 
-  return autoSignResult;
+  const { approved, feeOverride } = await requestUserConfirmation({
+    id: genId(),
+    method,
+    origin,
+    params,
+    signerAddress,
+    chainId: ctx.chainId,
+  } as any);
+  if (!approved) {
+    throw userRejection('User rejected the request');
+  }
+  return { autoSignResult, feeOverride: feeOverride ?? null };
 }
 
 async function handleSendTransaction(params: unknown[], origin: string): Promise<string> {
@@ -200,7 +201,7 @@ async function handleSendTransaction(params: unknown[], origin: string): Promise
   // SECURITY: Validate tx.from matches active account if specified
   validateSigner(parsed.from ?? undefined, account.address);
 
-  const autoSignResult = await checkWhitelistOrConfirm(
+  const { autoSignResult, feeOverride } = await checkWhitelistOrConfirm(
     'eth_sendTransaction',
     origin,
     [tx],
@@ -214,19 +215,43 @@ async function handleSendTransaction(params: unknown[], origin: string): Promise
     account.address,
   );
 
+  // Resolve effective fee parameters: user override > dApp params > viem defaults
+  const overrideGas = feeOverride?.gas ? BigInt(feeOverride.gas) : null;
+  const overrideMaxFee = feeOverride?.maxFeePerGas ? BigInt(feeOverride.maxFeePerGas) : null;
+  const overridePriority = feeOverride?.maxPriorityFeePerGas ? BigInt(feeOverride.maxPriorityFeePerGas) : null;
+  const overrideGasPrice = feeOverride?.gasPrice ? BigInt(feeOverride.gasPrice) : null;
+
+  const txMaxFee = tx.maxFeePerGas ? hexToBigInt(tx.maxFeePerGas as `0x${string}`) : null;
+  const txPriority = tx.maxPriorityFeePerGas ? hexToBigInt(tx.maxPriorityFeePerGas as `0x${string}`) : null;
+  const txGasPrice = tx.gasPrice ? hexToBigInt(tx.gasPrice as `0x${string}`) : null;
+
+  const effGas = overrideGas ?? parsed.gasLimitBigInt;
+  const effMaxFee = overrideMaxFee ?? txMaxFee;
+  const effPriority = overridePriority ?? txPriority;
+  const effGasPrice = overrideGasPrice ?? txGasPrice;
+
   // Build and send transaction
   const client = await networkManager.getWalletClient(account);
   const chain = networkManager.buildViemChain(network);
 
-  const hash = await client.sendTransaction({
+  const txArgs: any = {
     to: parsed.to as `0x${string}`,
     value: parsed.valueBigInt,
     data: (parsed.data as `0x${string}`) ?? undefined,
-    gas: parsed.gasLimitBigInt ?? undefined,
+    gas: effGas ?? undefined,
     chain,
-  });
+  };
+  // EIP-1559 takes precedence; viem rejects mixing the two fee modes.
+  if (effMaxFee !== null) {
+    txArgs.maxFeePerGas = effMaxFee;
+    if (effPriority !== null) txArgs.maxPriorityFeePerGas = effPriority;
+  } else if (effGasPrice !== null) {
+    txArgs.gasPrice = effGasPrice;
+  }
 
-  // Log the transaction
+  const hash = await client.sendTransaction(txArgs);
+
+  // Log the transaction (capture the requested fee values so we can compare to actual)
   const logId = genId();
   await txLogger.appendLog({
     id: logId,
@@ -241,6 +266,10 @@ async function handleSendTransaction(params: unknown[], origin: string): Promise
     autoSigned: autoSignResult.allowed,
     ruleId: autoSignResult.rule?.id,
     status: 'pending',
+    gasLimit: effGas?.toString(),
+    maxFeePerGas: effMaxFee?.toString(),
+    maxPriorityFeePerGas: effPriority?.toString(),
+    gasPrice: effGasPrice?.toString(),
   });
 
   // Poll for receipt to update tx status
@@ -257,7 +286,7 @@ async function handlePersonalSign(params: unknown[], origin: string): Promise<st
   // SECURITY: Validate requested address matches active account
   validateSigner(params[1] as string | undefined, account.address);
 
-  const autoSignResult = await checkWhitelistOrConfirm(
+  const { autoSignResult } = await checkWhitelistOrConfirm(
     'personal_sign',
     origin,
     params,
@@ -278,7 +307,7 @@ async function handleSignTypedData(params: unknown[], origin: string): Promise<s
   // SECURITY: Validate requested address matches active account
   validateSigner(params[0] as string | undefined, account.address);
 
-  const autoSignResult = await checkWhitelistOrConfirm(
+  const { autoSignResult } = await checkWhitelistOrConfirm(
     'eth_signTypedData_v4',
     origin,
     params,
@@ -340,7 +369,17 @@ function pollTxReceipt(logId: string, chainId: number, hash: string): void {
       const receipt = await client.getTransactionReceipt({ hash: hash as `0x${string}` });
       if (receipt) {
         const status = receipt.status === 'success' ? 'confirmed' : 'failed';
-        await txLogger.updateLogEntry(logId, { status });
+        const gasUsed = receipt.gasUsed;
+        const effectiveGasPrice = receipt.effectiveGasPrice;
+        const fee = gasUsed !== undefined && effectiveGasPrice !== undefined
+          ? gasUsed * effectiveGasPrice
+          : null;
+        await txLogger.updateLogEntry(logId, {
+          status,
+          gasUsed: gasUsed?.toString(),
+          effectiveGasPrice: effectiveGasPrice?.toString(),
+          feeWei: fee?.toString(),
+        });
         clearInterval(timer);
       }
     } catch {

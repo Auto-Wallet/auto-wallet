@@ -1,5 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { createRoot } from 'react-dom/client';
+import { MSG_SOURCE } from '../types/messages';
+import { FeeEditor, type FeeOverride, type FeeEditorRequest } from '../popup/FeeEditor';
 import '../popup/styles.css';
 
 interface PendingRequest {
@@ -14,36 +16,35 @@ interface PendingRequest {
 function ConfirmPage() {
   const [request, setRequest] = useState<PendingRequest | null>(null);
   const [addToWhitelist, setAddToWhitelist] = useState(false);
+  const [feeOverride, setFeeOverride] = useState<FeeOverride | null>(null);
 
   useEffect(() => {
-    // Read request data from chrome.storage.session instead of URL query string
     const params = new URLSearchParams(window.location.search);
     const requestId = params.get('id');
     if (requestId) {
       const key = `confirm_${requestId}`;
       chrome.storage.session.get(key, (result) => {
-        if (result[key]) {
-          setRequest(result[key]);
-        }
+        if (result[key]) setRequest(result[key]);
       });
     }
   }, []);
 
   function approve() {
     chrome.runtime.sendMessage({
-      source: 'auto-wallet',
+      source: MSG_SOURCE,
       type: 'confirm_response',
       requestId: request?.id,
       approved: true,
       addToWhitelist,
       origin: request?.origin,
+      feeOverride: request?.method === 'eth_sendTransaction' ? feeOverride : null,
     });
     window.close();
   }
 
   function reject() {
     chrome.runtime.sendMessage({
-      source: 'auto-wallet',
+      source: MSG_SOURCE,
       type: 'confirm_response',
       requestId: request?.id,
       approved: false,
@@ -73,6 +74,10 @@ function ConfirmPage() {
   // Extract domain from origin
   let domain = request.origin;
   try { domain = new URL(request.origin).hostname; } catch {}
+
+  const feeRequest: FeeEditorRequest | null = isTransaction
+    ? { to: tx.to, from: tx.from, data: tx.data, value: tx.value }
+    : null;
 
   return (
     <div className="confirm-shell">
@@ -146,6 +151,20 @@ function ConfirmPage() {
               </div>
             )}
           </div>
+        )}
+
+        {/* Fee editor */}
+        {feeRequest && (
+          <FeeEditor
+            request={feeRequest}
+            prefill={{
+              gas: tx.gas ?? tx.gasLimit,
+              maxFeePerGas: tx.maxFeePerGas,
+              maxPriorityFeePerGas: tx.maxPriorityFeePerGas,
+              gasPrice: tx.gasPrice,
+            }}
+            onChange={setFeeOverride}
+          />
         )}
 
         {/* Personal sign */}

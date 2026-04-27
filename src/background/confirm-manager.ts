@@ -5,9 +5,22 @@ import { addRule } from '../lib/whitelist';
 import type { WhitelistRule } from '../types/whitelist';
 import { createPopupWindow } from './window-utils';
 
+export interface FeeOverride {
+  type: 'eip1559' | 'legacy';
+  gas: string | null;
+  maxFeePerGas: string | null;
+  maxPriorityFeePerGas: string | null;
+  gasPrice: string | null;
+}
+
+export interface ConfirmResult {
+  approved: boolean;
+  feeOverride?: FeeOverride | null;
+}
+
 interface PendingConfirmation {
   id: string;
-  resolve: (approved: boolean) => void;
+  resolve: (result: ConfirmResult) => void;
 }
 
 const pendingConfirmations = new Map<string, PendingConfirmation>();
@@ -20,7 +33,7 @@ export interface ConfirmRequest {
 }
 
 /** Open a confirmation popup and wait for user to approve or reject. */
-export function requestUserConfirmation(request: ConfirmRequest): Promise<boolean> {
+export function requestUserConfirmation(request: ConfirmRequest): Promise<ConfirmResult> {
   return new Promise(async (resolve) => {
     pendingConfirmations.set(request.id, { id: request.id, resolve });
 
@@ -34,7 +47,7 @@ export function requestUserConfirmation(request: ConfirmRequest): Promise<boolea
     if (!window) {
       await chrome.storage.session.remove(`confirm_${request.id}`);
       pendingConfirmations.delete(request.id);
-      resolve(false);
+      resolve({ approved: false });
       return;
     }
 
@@ -45,7 +58,7 @@ export function requestUserConfirmation(request: ConfirmRequest): Promise<boolea
         const pending = pendingConfirmations.get(request.id);
         if (pending) {
           pendingConfirmations.delete(request.id);
-          pending.resolve(false);
+          pending.resolve({ approved: false });
         }
       }
     };
@@ -62,7 +75,10 @@ chrome.runtime.onMessage.addListener((message) => {
   if (pending) {
     pendingConfirmations.delete(message.requestId);
     chrome.storage.session.remove(`confirm_${message.requestId}`);
-    pending.resolve(message.approved === true);
+    pending.resolve({
+      approved: message.approved === true,
+      feeOverride: message.feeOverride ?? null,
+    });
 
     // If user toggled "Trust this site", add origin to whitelist
     if (message.approved && message.addToWhitelist && message.origin) {

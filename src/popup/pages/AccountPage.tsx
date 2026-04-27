@@ -1,7 +1,9 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { callBackground } from '../api';
 import type { Network } from '../../types/network';
 import type { Token } from '../../types/token';
+import { encodeFunctionData, erc20Abi, parseEther, parseUnits, toHex } from 'viem';
+import { FeeEditor, type FeeOverride, type FeeEditorRequest } from '../FeeEditor';
 
 type SendTarget = {
   type: 'native';
@@ -137,6 +139,7 @@ export function AccountPage({ onLock }: { onLock: () => void }) {
   const [sending, setSending] = useState(false);
   const [sendError, setSendError] = useState('');
   const [sendSuccess, setSendSuccess] = useState('');
+  const [sendFee, setSendFee] = useState<FeeOverride | null>(null);
 
   // Add token
   const [showAddToken, setShowAddToken] = useState(false);
@@ -183,17 +186,17 @@ export function AccountPage({ onLock }: { onLock: () => void }) {
 
   function openSendNative() {
     setSendTarget({ type: 'native', symbol: network?.symbol ?? 'ETH', balance });
-    setSendTo(''); setSendAmount(''); setSendError(''); setSendSuccess('');
+    setSendTo(''); setSendAmount(''); setSendError(''); setSendSuccess(''); setSendFee(null);
   }
 
   function openSendToken(token: Token, tokenBalance: string) {
     setSendTarget({ type: 'token', token, balance: tokenBalance });
-    setSendTo(''); setSendAmount(''); setSendError(''); setSendSuccess('');
+    setSendTo(''); setSendAmount(''); setSendError(''); setSendSuccess(''); setSendFee(null);
   }
 
   function closeSend() {
     setSendTarget(null); setSendTo(''); setSendAmount('');
-    setSendError(''); setSendSuccess('');
+    setSendError(''); setSendSuccess(''); setSendFee(null);
   }
 
   async function handleSend() {
@@ -205,13 +208,16 @@ export function AccountPage({ onLock }: { onLock: () => void }) {
     try {
       let hash: string;
       if (sendTarget.type === 'native') {
-        hash = await callBackground<string>('sendNative', { to: sendTo.trim(), amount: sendAmount.trim() });
+        hash = await callBackground<string>('sendNative', {
+          to: sendTo.trim(), amount: sendAmount.trim(), fee: sendFee,
+        });
       } else {
         hash = await callBackground<string>('sendToken', {
           to: sendTo.trim(),
           amount: sendAmount.trim(),
           tokenAddress: sendTarget.token.address,
           decimals: sendTarget.token.decimals,
+          fee: sendFee,
         });
       }
       setSendSuccess(hash);
@@ -220,6 +226,45 @@ export function AccountPage({ onLock }: { onLock: () => void }) {
     } catch (e: any) { setSendError(e.message); }
     setSending(false);
   }
+
+  // Build the fee-suggestion request for the active send. Returns null when
+  // inputs aren't valid enough yet — FeeEditor will still load suggestions
+  // (just without a gas estimate).
+  const feeRequest = useMemo<FeeEditorRequest | null>(() => {
+    if (!sendTarget || !address) return null;
+    const toRaw = sendTo.trim();
+    const looksLikeAddr = toRaw.startsWith('0x') && toRaw.length === 42;
+
+    if (sendTarget.type === 'native') {
+      let valueHex: string | undefined;
+      try {
+        if (sendAmount.trim()) valueHex = toHex(parseEther(sendAmount.trim()));
+      } catch { /* leave undefined */ }
+      return {
+        from: address,
+        to: looksLikeAddr ? toRaw : undefined,
+        value: valueHex,
+      };
+    }
+
+    // Token transfer: encode transfer(to, amount) so the gas estimate is realistic
+    let data: string | undefined;
+    if (looksLikeAddr && sendAmount.trim()) {
+      try {
+        const amt = parseUnits(sendAmount.trim(), sendTarget.token.decimals);
+        data = encodeFunctionData({
+          abi: erc20Abi,
+          functionName: 'transfer',
+          args: [toRaw as `0x${string}`, amt],
+        });
+      } catch { /* leave undefined */ }
+    }
+    return {
+      from: address,
+      to: sendTarget.token.address,
+      data,
+    };
+  }, [sendTarget, sendTo, sendAmount, address]);
 
   async function handleAddToken() {
     if (!tokenAddress.trim() || !network) return;
@@ -316,6 +361,9 @@ export function AccountPage({ onLock }: { onLock: () => void }) {
             <p style={{ fontSize: 10, color: 'var(--text-muted)', marginTop: -4 }}>
               Balance: {parseFloat(sendMaxBalance).toFixed(6)} {sendSymbol}
             </p>
+          )}
+          {feeRequest && (
+            <FeeEditor request={feeRequest} onChange={setSendFee} />
           )}
           {sendError && <p className="error-text">{sendError}</p>}
           {sendSuccess && (
