@@ -17,6 +17,18 @@
   <a href="LICENSE">License</a>
 </p>
 
+<p align="center">
+  <a href="https://chromewebstore.google.com/detail/auto-wallet/bckpgmilngeoccpkmoeebmbjndegfojb">
+    <img src="https://img.shields.io/chrome-web-store/v/bckpgmilngeoccpkmoeebmbjndegfojb?logo=googlechrome&logoColor=white&label=Chrome%20Web%20Store&color=4f46e5" alt="Install on Chrome Web Store" />
+  </a>
+  <a href="https://chromewebstore.google.com/detail/auto-wallet/bckpgmilngeoccpkmoeebmbjndegfojb">
+    <img src="https://img.shields.io/chrome-web-store/users/bckpgmilngeoccpkmoeebmbjndegfojb?logo=googlechrome&logoColor=white&label=Users&color=4f46e5" alt="Chrome Web Store users" />
+  </a>
+  <a href="https://chromewebstore.google.com/detail/auto-wallet/bckpgmilngeoccpkmoeebmbjndegfojb">
+    <img src="https://img.shields.io/chrome-web-store/rating/bckpgmilngeoccpkmoeebmbjndegfojb?logo=googlechrome&logoColor=white&label=Rating&color=4f46e5" alt="Chrome Web Store rating" />
+  </a>
+</p>
+
 ---
 
 ## Features
@@ -70,6 +82,8 @@ Dimensions combine with AND logic. Gas limit and value caps are always enforced 
 - dApp-triggered unlock popup when connecting to a locked wallet
 
 ## Getting Started
+
+The easiest way is to install from the [Chrome Web Store](https://chromewebstore.google.com/detail/auto-wallet/bckpgmilngeoccpkmoeebmbjndegfojb). To build from source, follow the steps below.
 
 ### Prerequisites
 
