@@ -14,6 +14,7 @@ import { notifyTx, notifySign } from '../lib/notify';
 import { emitChainChanged } from './events';
 import { RpcError, userRejection } from '../lib/rpc-error';
 import { validateSigner, validateRpcUrl, parseAddChainParams, parseTxParams } from '../lib/rpc-validation';
+import { bufferGas } from '../lib/gas';
 
 // --- Rate limiting for eth_requestAccounts ---
 let lastUnlockPromptTime = 0;
@@ -234,11 +235,24 @@ async function handleSendTransaction(params: unknown[], origin: string): Promise
   const client = await networkManager.getWalletClient(account);
   const chain = networkManager.buildViemChain(network);
 
+  // Resolve gas: estimate when not provided, then buffer ×1.2 in all cases.
+  const publicClient = await networkManager.getClient(chainId);
+  let baseGas = effGas;
+  if (baseGas === null) {
+    baseGas = await publicClient.estimateGas({
+      account: account.address as `0x${string}`,
+      to: parsed.to as `0x${string}` | undefined,
+      data: (parsed.data as `0x${string}`) ?? undefined,
+      value: parsed.valueBigInt,
+    });
+  }
+  const finalGas = bufferGas(baseGas);
+
   const txArgs: any = {
     to: parsed.to as `0x${string}`,
     value: parsed.valueBigInt,
     data: (parsed.data as `0x${string}`) ?? undefined,
-    gas: effGas ?? undefined,
+    gas: finalGas,
     chain,
   };
   // EIP-1559 takes precedence; viem rejects mixing the two fee modes.
@@ -266,16 +280,15 @@ async function handleSendTransaction(params: unknown[], origin: string): Promise
     autoSigned: autoSignResult.allowed,
     ruleId: autoSignResult.rule?.id,
     status: 'pending',
-    gasLimit: effGas?.toString(),
+    gasLimit: finalGas.toString(),
     maxFeePerGas: effMaxFee?.toString(),
     maxPriorityFeePerGas: effPriority?.toString(),
     gasPrice: effGasPrice?.toString(),
   });
 
-  // Poll for receipt to update tx status
-  pollTxReceipt(logId, chainId, hash);
+  // Poll for receipt — notification fires from there once status is known.
+  pollTxReceipt(logId, chainId, hash, origin, autoSignResult.allowed, network.blockExplorerUrl);
 
-  notifyTx(hash, origin, autoSignResult.allowed, network.blockExplorerUrl);
   return hash;
 }
 
@@ -357,7 +370,14 @@ async function forwardToNode(method: string, params: unknown[]): Promise<unknown
 
 // --- Tx receipt polling ---
 
-function pollTxReceipt(logId: string, chainId: number, hash: string): void {
+function pollTxReceipt(
+  logId: string,
+  chainId: number,
+  hash: string,
+  origin: string,
+  autoSigned: boolean,
+  explorerUrl?: string,
+): void {
   const MAX_ATTEMPTS = 60;
   const INTERVAL_MS = 5000;
   let attempts = 0;
@@ -380,6 +400,7 @@ function pollTxReceipt(logId: string, chainId: number, hash: string): void {
           effectiveGasPrice: effectiveGasPrice?.toString(),
           feeWei: fee?.toString(),
         });
+        notifyTx(hash, origin, autoSigned, status, explorerUrl);
         clearInterval(timer);
       }
     } catch {

@@ -5,13 +5,23 @@ const ICON_URL = 'icons/icon128.png';
 // Map notification ID → explorer URL for click-to-open
 const notificationUrls: Map<string, string> = new Map();
 
-export function notifyTx(hash: string, origin: string, autoSigned: boolean, explorerUrl?: string): void {
+export type TxNotifyStatus = 'confirmed' | 'failed';
+
+export function notifyTx(
+  hash: string,
+  origin: string,
+  autoSigned: boolean,
+  status: TxNotifyStatus,
+  explorerUrl?: string,
+): void {
   const shortHash = `${hash.slice(0, 10)}...${hash.slice(-6)}`;
   const notifId = `tx-${hash}`;
+  const prefix = autoSigned ? 'Auto-Signed Transaction' : 'Transaction';
+  const title = status === 'confirmed' ? `${prefix} Confirmed` : `${prefix} Failed`;
   chrome.notifications.create(notifId, {
     type: 'basic',
     iconUrl: ICON_URL,
-    title: autoSigned ? 'Auto-Signed Transaction' : 'Transaction Sent',
+    title,
     message: `${shortHash}\nfrom ${origin}`,
     priority: 1,
   });

@@ -12,6 +12,8 @@ import type { Network } from '../types/network';
 import { type WalletSettings, DEFAULT_SETTINGS } from '../types/settings';
 import { emitAccountsChanged, emitChainChanged } from './events';
 import { toHex } from 'viem';
+import { bufferGas } from '../lib/gas';
+import { notifyTx } from '../lib/notify';
 
 /** Handle actions from the Popup UI. */
 export async function handlePopupAction(action: string, payload: any): Promise<unknown> {
@@ -88,15 +90,22 @@ export async function handlePopupAction(action: string, payload: any): Promise<u
     case 'sendNative': {
       const account = await keyManager.getAccount();
       const network = await networkManager.getActiveNetwork();
+      const publicClient = await getClient(network.chainId);
       const client = await networkManager.getWalletClient(account);
       const chain = networkManager.buildViemChain(network);
       const value = parseEther(payload.amount);
       const fee = applyFeeOverride(payload.fee);
+      const finalGas = await resolveGas(
+        publicClient,
+        fee.txArgs.gas,
+        { from: account.address, to: payload.to, value },
+      );
       const hash = await client.sendTransaction({
         to: payload.to as `0x${string}`,
         value,
         chain,
         ...fee.txArgs,
+        gas: finalGas,
       } as any);
       const logId = genId();
       await txLogger.appendLog({
@@ -111,8 +120,9 @@ export async function handlePopupAction(action: string, payload: any): Promise<u
         autoSigned: false,
         status: 'pending',
         ...fee.logFields,
+        gasLimit: finalGas.toString(),
       });
-      pollTxReceipt(logId, network.chainId, hash);
+      pollTxReceipt(logId, network.chainId, hash, 'Auto Wallet', false, network.blockExplorerUrl);
       return hash;
     }
 
@@ -120,6 +130,7 @@ export async function handlePopupAction(action: string, payload: any): Promise<u
     case 'sendToken': {
       const account = await keyManager.getAccount();
       const network = await networkManager.getActiveNetwork();
+      const publicClient = await getClient(network.chainId);
       const client = await networkManager.getWalletClient(account);
       const chain = networkManager.buildViemChain(network);
       const amount = parseUnits(payload.amount, payload.decimals);
@@ -129,12 +140,18 @@ export async function handlePopupAction(action: string, payload: any): Promise<u
         args: [payload.to as `0x${string}`, amount],
       });
       const fee = applyFeeOverride(payload.fee);
+      const finalGas = await resolveGas(
+        publicClient,
+        fee.txArgs.gas,
+        { from: account.address, to: payload.tokenAddress, data, value: 0n },
+      );
       const hash = await client.sendTransaction({
         to: payload.tokenAddress as `0x${string}`,
         data,
         value: 0n,
         chain,
         ...fee.txArgs,
+        gas: finalGas,
       } as any);
       const logId = genId();
       await txLogger.appendLog({
@@ -150,8 +167,9 @@ export async function handlePopupAction(action: string, payload: any): Promise<u
         autoSigned: false,
         status: 'pending',
         ...fee.logFields,
+        gasLimit: finalGas.toString(),
       });
-      pollTxReceipt(logId, network.chainId, hash);
+      pollTxReceipt(logId, network.chainId, hash, 'Auto Wallet', false, network.blockExplorerUrl);
       return hash;
     }
 
@@ -341,9 +359,31 @@ async function getFeeSuggestions(req: FeeSuggestionsRequest): Promise<FeeSuggest
   };
 }
 
+// Resolve a gas limit: estimate when not provided, then buffer ×1.2.
+async function resolveGas(
+  client: Awaited<ReturnType<typeof getClient>>,
+  providedGas: bigint | undefined,
+  call: { from: string; to: string; data?: `0x${string}`; value: bigint },
+): Promise<bigint> {
+  const base = providedGas ?? await client.estimateGas({
+    account: call.from as `0x${string}`,
+    to: call.to as `0x${string}`,
+    data: call.data,
+    value: call.value,
+  });
+  return bufferGas(base);
+}
+
 // --- Tx receipt polling (shared with rpc-handler, but kept simple as a local helper) ---
 
-function pollTxReceipt(logId: string, chainId: number, hash: string): void {
+function pollTxReceipt(
+  logId: string,
+  chainId: number,
+  hash: string,
+  origin: string,
+  autoSigned: boolean,
+  explorerUrl?: string,
+): void {
   const MAX_ATTEMPTS = 60;
   const INTERVAL_MS = 5000;
   let attempts = 0;
@@ -366,6 +406,7 @@ function pollTxReceipt(logId: string, chainId: number, hash: string): void {
           effectiveGasPrice: effectiveGasPrice?.toString(),
           feeWei: fee?.toString(),
         });
+        notifyTx(hash, origin, autoSigned, status, explorerUrl);
         clearInterval(timer);
       }
     } catch {
