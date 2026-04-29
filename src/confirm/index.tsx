@@ -13,6 +13,18 @@ interface PendingRequest {
   chainId?: number;
 }
 
+function prettyTypedData(value: unknown): string {
+  if (value == null) return '';
+  if (typeof value === 'string') {
+    try {
+      return JSON.stringify(JSON.parse(value), null, 2);
+    } catch {
+      return value;
+    }
+  }
+  return JSON.stringify(value, null, 2);
+}
+
 function ConfirmPage() {
   const [request, setRequest] = useState<PendingRequest | null>(null);
   const [addToWhitelist, setAddToWhitelist] = useState(false);
@@ -182,9 +194,7 @@ function ConfirmPage() {
           <div className="card" style={{ padding: 12 }}>
             <span className="confirm-label">Typed Data</span>
             <pre className="confirm-data mono" style={{ marginTop: 6, whiteSpace: 'pre-wrap' }}>
-              {typeof request.params?.[1] === 'string'
-                ? request.params[1]
-                : JSON.stringify(request.params?.[1], null, 2)}
+              {prettyTypedData(request.params?.[1])}
             </pre>
           </div>
         )}
