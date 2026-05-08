@@ -46,7 +46,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         type: message.type === 'rpc_request' ? 'rpc_response' : 'popup_response',
         requestId: message.id,
         error: message.type === 'rpc_request'
-          ? { code: err.code ?? 4001, message: err.message }
+          ? { code: err.code ?? -32603, message: err.message }
           : err.message,
       });
     }

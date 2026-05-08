@@ -568,8 +568,19 @@ input[type="checkbox"]:checked::after {
 @keyframes spin { to { transform: rotate(360deg); } }
 
 /* --- Confirm Popup Window --- */
+/* When body hosts a .confirm-shell (confirm.html / unlock.html), let it fill the
+   window so the shell can center horizontally — Arc opens these popups at a
+   larger default size than Chrome, otherwise the 360px body sits left-aligned. */
+body:has(.confirm-shell) {
+  width: 100vw;
+  min-width: 360px;
+  display: flex;
+  justify-content: center;
+}
+
 .confirm-shell {
   width: 100%;
+  max-width: 360px;
   min-height: 100vh;
   display: flex;
   flex-direction: column;

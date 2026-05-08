@@ -104,6 +104,17 @@ async function handleRequestAccounts(origin: string): Promise<string[]> {
 async function handleSwitchChain(params: unknown[]): Promise<null> {
   const { chainId } = params[0] as { chainId: string };
   const id = parseInt(chainId, 16);
+
+  // EIP-3326: signal "unrecognized chain" with code 4902 so dapps (wagmi/viem)
+  // can fall back to wallet_addEthereumChain instead of treating it as a generic failure.
+  const all = await networkManager.getAllNetworks();
+  if (!all.find((n) => n.chainId === id)) {
+    throw new RpcError(
+      `Unrecognized chain ID "0x${id.toString(16)}". Try adding the chain using wallet_addEthereumChain first.`,
+      4902,
+    );
+  }
+
   await networkManager.switchNetwork(id);
   emitChainChanged(chainId);
   return null;
