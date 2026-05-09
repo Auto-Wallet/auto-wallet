@@ -4,6 +4,8 @@ import type { Network } from '../../types/network';
 import type { Token } from '../../types/token';
 import { encodeFunctionData, erc20Abi, parseEther, parseUnits, toHex } from 'viem';
 import { FeeEditor, type FeeOverride, type FeeEditorRequest } from '../FeeEditor';
+import { LedgerBadge } from '../LedgerBadge';
+import { signLedgerSendTx } from '../ledger-signer';
 
 type SendTarget = {
   type: 'native';
@@ -125,12 +127,21 @@ function TokenIcon({ token, size = 32 }: { token: Token; size?: number }) {
   );
 }
 
+interface ActiveInfo {
+  id: string;
+  label: string;
+  address: string;
+  type: 'private' | 'ledger';
+  derivationPath?: string;
+}
+
 export function AccountPage({ onLock }: { onLock: () => void }) {
   const [address, setAddress] = useState('');
   const [balance, setBalance] = useState('');
   const [network, setNetwork] = useState<Network | null>(null);
   const [tokens, setTokens] = useState<{ token: Token; balance: string }[]>([]);
   const [copied, setCopied] = useState(false);
+  const [active, setActive] = useState<ActiveInfo | null>(null);
 
   // Send
   const [sendTarget, setSendTarget] = useState<SendTarget | null>(null);
@@ -153,11 +164,12 @@ export function AccountPage({ onLock }: { onLock: () => void }) {
   useEffect(() => { loadData(); }, []);
 
   async function loadData() {
-    const [addr, net] = await Promise.all([
-      callBackground<string>('getAddress'),
+    const [info, net] = await Promise.all([
+      callBackground<ActiveInfo>('getActiveAccountInfo'),
       callBackground<Network>('getActiveNetwork'),
     ]);
-    setAddress(addr);
+    setActive(info);
+    setAddress(info.address);
     setNetwork(net);
 
     const bal = await callBackground<string>('getNativeBalance');
@@ -207,18 +219,41 @@ export function AccountPage({ onLock }: { onLock: () => void }) {
     setSending(true); setSendError(''); setSendSuccess('');
     try {
       let hash: string;
+      const isLedger = active?.type === 'ledger';
       if (sendTarget.type === 'native') {
-        hash = await callBackground<string>('sendNative', {
-          to: sendTo.trim(), amount: sendAmount.trim(), fee: sendFee,
-        });
+        if (isLedger) {
+          hash = await signLedgerSendTx({
+            kind: 'native',
+            to: sendTo.trim(),
+            amount: sendAmount.trim(),
+            fee: sendFee,
+            derivationPath: active!.derivationPath!,
+          });
+        } else {
+          hash = await callBackground<string>('sendNative', {
+            to: sendTo.trim(), amount: sendAmount.trim(), fee: sendFee,
+          });
+        }
       } else {
-        hash = await callBackground<string>('sendToken', {
-          to: sendTo.trim(),
-          amount: sendAmount.trim(),
-          tokenAddress: sendTarget.token.address,
-          decimals: sendTarget.token.decimals,
-          fee: sendFee,
-        });
+        if (isLedger) {
+          hash = await signLedgerSendTx({
+            kind: 'token',
+            to: sendTo.trim(),
+            amount: sendAmount.trim(),
+            tokenAddress: sendTarget.token.address,
+            decimals: sendTarget.token.decimals,
+            fee: sendFee,
+            derivationPath: active!.derivationPath!,
+          });
+        } else {
+          hash = await callBackground<string>('sendToken', {
+            to: sendTo.trim(),
+            amount: sendAmount.trim(),
+            tokenAddress: sendTarget.token.address,
+            decimals: sendTarget.token.decimals,
+            fee: sendFee,
+          });
+        }
       }
       setSendSuccess(hash);
       setSendTo(''); setSendAmount('');
@@ -301,6 +336,7 @@ export function AccountPage({ onLock }: { onLock: () => void }) {
       {/* Address */}
       <div className="text-center">
         <button onClick={copyAddress} className="address-chip">
+          {active?.type === 'ledger' && <LedgerBadge title="Ledger hardware wallet" />}
           {short}
           {copied ? (
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--success)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">

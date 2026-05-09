@@ -12,6 +12,8 @@ import {
   resolveActiveAccount,
   nextAccountLabel,
   toAccountInfo,
+  isLedger,
+  PASSWORD_VERIFIER_PLAINTEXT,
   type StoredAccount,
   type AccountInfo,
   type SessionData,
@@ -21,7 +23,8 @@ import {
 export type { StoredAccount, AccountInfo } from './key-manager.core';
 
 // --- In-memory state (rebuilt from session storage on SW wake) ---
-
+// Only private accounts hold a viem account in memory; ledger accounts are
+// metadata-only at the background layer (signing happens in UI contexts).
 let unlockedAccounts: Map<string, PrivateKeyAccount> = new Map();
 let activeAccountId: string | null = null;
 let masterPassword: string | null = null;
@@ -62,27 +65,30 @@ async function restoreFromSession(): Promise<boolean> {
     return false;
   }
 
-  // Re-decrypt the active account
   const accounts = await getStoredAccounts();
   const target = resolveActiveAccount(accounts, session.activeAccountId);
   if (!target || target.id !== session.activeAccountId) {
-    // If we couldn't find the exact saved account, session is stale
     await clearSession();
     return false;
   }
 
+  // Verify the saved password is still valid by decrypting the verifier
+  // (or, for legacy wallets, the first private account).
   try {
-    const plaintext = await decrypt(target.encrypted, session.masterPassword);
-    const account = decryptToAccount(plaintext);
-    masterPassword = session.masterPassword;
-    activeAccountId = session.activeAccountId;
-    unlockedAccounts.set(target.id, account);
-    resetLockTimer();
-    return true;
+    await verifyPassword(session.masterPassword, accounts);
   } catch {
     await clearSession();
     return false;
   }
+
+  masterPassword = session.masterPassword;
+  activeAccountId = session.activeAccountId;
+  if (!isLedger(target) && target.encrypted) {
+    const plaintext = await decrypt(target.encrypted, session.masterPassword);
+    unlockedAccounts.set(target.id, decryptToAccount(plaintext));
+  }
+  resetLockTimer();
+  return true;
 }
 
 // --- Auto-lock ---
@@ -116,7 +122,48 @@ function getMasterPassword(): string {
   return masterPassword;
 }
 
-async function appendAndActivate(
+/**
+ * Async variant for use across the message boundary. The MV3 service worker
+ * can be terminated while the popup waits on long-running UI flows (e.g.
+ * Ledger device prompts), wiping the in-memory `masterPassword`. When the SW
+ * wakes up to handle the next message we have to rehydrate from session
+ * storage before asserting unlocked state.
+ */
+async function ensureMasterPassword(): Promise<string> {
+  if (!masterPassword) await restoreFromSession();
+  if (!masterPassword) throw new Error('Wallet is locked');
+  return masterPassword;
+}
+
+async function getPasswordVerifier(): Promise<EncryptedData | null> {
+  return getItem<EncryptedData>(STORAGE_KEYS.PASSWORD_VERIFIER);
+}
+
+async function ensurePasswordVerifier(password: string): Promise<void> {
+  const existing = await getPasswordVerifier();
+  if (existing) return;
+  const encrypted = await encrypt(PASSWORD_VERIFIER_PLAINTEXT, password);
+  await setItem(STORAGE_KEYS.PASSWORD_VERIFIER, encrypted);
+}
+
+/** Verify password against the verifier blob (or the first private account for legacy wallets). */
+async function verifyPassword(password: string, accounts: StoredAccount[]): Promise<void> {
+  const verifier = await getPasswordVerifier();
+  if (verifier) {
+    const plaintext = await decrypt(verifier, password);
+    if (plaintext !== PASSWORD_VERIFIER_PLAINTEXT) throw new Error('Wrong password');
+    return;
+  }
+  // Legacy wallets: verify by decrypting the first private account, then backfill the verifier.
+  const firstPrivate = accounts.find((a) => !isLedger(a) && a.encrypted);
+  if (!firstPrivate || !firstPrivate.encrypted) {
+    throw new Error('No way to verify password — wallet has no verifier and no private accounts');
+  }
+  await decrypt(firstPrivate.encrypted, password); // throws on wrong password
+  await ensurePasswordVerifier(password);
+}
+
+async function appendPrivateAndActivate(
   secret: string,
   account: PrivateKeyAccount,
   label: string,
@@ -126,6 +173,7 @@ async function appendAndActivate(
   const id = crypto.randomUUID();
   const stored: StoredAccount = {
     id, label, encrypted,
+    type: 'private',
     address: account.address,
     createdAt: Date.now(),
   };
@@ -134,6 +182,7 @@ async function appendAndActivate(
   await saveStoredAccounts(accounts);
 
   masterPassword = pw;
+  await ensurePasswordVerifier(pw);
   unlockedAccounts.set(id, account);
   activeAccountId = id;
   await setItem(STORAGE_KEYS.ACTIVE_ACCOUNT_ID, id);
@@ -149,24 +198,38 @@ async function getNextLabel(): Promise<string> {
 // --- Public API ---
 
 export async function isUnlocked(): Promise<boolean> {
-  if (activeAccountId !== null && unlockedAccounts.size > 0) return true;
+  if (activeAccountId !== null && masterPassword !== null) return true;
   return restoreFromSession();
 }
 
+/** Throws if active account is a Ledger account (caller must use a UI-context signer). */
 export async function getAccount(): Promise<PrivateKeyAccount> {
-  if (!activeAccountId || unlockedAccounts.size === 0) {
+  if (!activeAccountId || !masterPassword) {
     await restoreFromSession();
   }
-  if (!activeAccountId) throw new Error('Wallet is locked');
-  const account = unlockedAccounts.get(activeAccountId);
-  if (!account) throw new Error('Active account not found in memory');
+  if (!activeAccountId || !masterPassword) throw new Error('Wallet is locked');
+
+  // Lazy decrypt for the active account
+  let account = unlockedAccounts.get(activeAccountId);
+  if (!account) {
+    const accounts = await getStoredAccounts();
+    const target = accounts.find((a) => a.id === activeAccountId);
+    if (!target) throw new Error('Active account not found');
+    if (isLedger(target)) {
+      throw new Error('Active account is a Ledger hardware wallet — signing must be performed in the UI');
+    }
+    if (!target.encrypted) throw new Error('Active account is missing encrypted key');
+    const plaintext = await decrypt(target.encrypted, masterPassword);
+    account = decryptToAccount(plaintext);
+    unlockedAccounts.set(activeAccountId, account);
+  }
   resetLockTimer();
   return account;
 }
 
 export async function getAddress(): Promise<string> {
-  const account = await getAccount();
-  return account.address;
+  const info = await getActiveAccountInfo();
+  return info.address;
 }
 
 export async function getActiveAccountId(): Promise<string> {
@@ -175,18 +238,28 @@ export async function getActiveAccountId(): Promise<string> {
   return activeAccountId;
 }
 
+export async function getActiveAccountInfo(): Promise<AccountInfo> {
+  if (!activeAccountId) await restoreFromSession();
+  if (!activeAccountId) throw new Error('Wallet is locked');
+  const accounts = await getStoredAccounts();
+  const stored = accounts.find((a) => a.id === activeAccountId);
+  if (!stored) throw new Error('Active account not found');
+  resetLockTimer();
+  return toAccountInfo(stored);
+}
+
 export async function listAccounts(): Promise<AccountInfo[]> {
   const stored = await getStoredAccounts();
   return stored.map(toAccountInfo);
 }
 
 export async function switchAccount(accountId: string): Promise<string> {
-  const pw = getMasterPassword();
+  const pw = await ensureMasterPassword();
   const stored = await getStoredAccounts();
   const target = stored.find((a) => a.id === accountId);
   if (!target) throw new Error('Account not found');
 
-  if (!unlockedAccounts.has(accountId)) {
+  if (!isLedger(target) && target.encrypted && !unlockedAccounts.has(accountId)) {
     const plaintext = await decrypt(target.encrypted, pw);
     unlockedAccounts.set(accountId, decryptToAccount(plaintext));
   }
@@ -194,7 +267,7 @@ export async function switchAccount(accountId: string): Promise<string> {
   activeAccountId = accountId;
   await setItem(STORAGE_KEYS.ACTIVE_ACCOUNT_ID, accountId);
   resetLockTimer();
-  return unlockedAccounts.get(accountId)!.address;
+  return target.address;
 }
 
 // ===== First-time setup (sets master password) =====
@@ -202,44 +275,119 @@ export async function switchAccount(accountId: string): Promise<string> {
 export async function createWallet(password: string, label?: string): Promise<string> {
   const privateKey = generatePrivateKey();
   const account = decryptToAccount(privateKey);
-  return appendAndActivate(privateKey, account, label ?? await getNextLabel(), password);
+  return appendPrivateAndActivate(privateKey, account, label ?? await getNextLabel(), password);
 }
 
 export async function importPrivateKey(privateKey: `0x${string}`, password: string, label?: string): Promise<string> {
   const account = decryptToAccount(privateKey);
-  return appendAndActivate(privateKey, account, label ?? await getNextLabel(), password);
+  return appendPrivateAndActivate(privateKey, account, label ?? await getNextLabel(), password);
 }
 
 export async function importMnemonic(mnemonic: string, password: string, label?: string): Promise<string> {
   const account = decryptToAccount(mnemonic);
-  return appendAndActivate(mnemonic, account, label ?? await getNextLabel(), password);
+  return appendPrivateAndActivate(mnemonic, account, label ?? await getNextLabel(), password);
+}
+
+export interface LedgerAccountSeed {
+  address: string;
+  derivationPath: string;
+  label?: string;
+}
+
+/**
+ * First-time wallet setup using Ledger accounts only. The user still chooses a
+ * master password (used for the password verifier and to encrypt any future
+ * private-key accounts). At least one ledger account must be supplied.
+ */
+export async function setupLedgerWallet(password: string, seeds: LedgerAccountSeed[]): Promise<string> {
+  if (seeds.length === 0) throw new Error('Pick at least one Ledger address');
+
+  const accounts: StoredAccount[] = [];
+  let baseLabelIdx = 0;
+  for (const seed of seeds) {
+    const id = crypto.randomUUID();
+    accounts.push({
+      id,
+      label: seed.label?.trim() || nextAccountLabel(baseLabelIdx),
+      type: 'ledger',
+      address: seed.address,
+      derivationPath: seed.derivationPath,
+      createdAt: Date.now(),
+    });
+    baseLabelIdx++;
+  }
+
+  await saveStoredAccounts(accounts);
+  await setItem(STORAGE_KEYS.PASSWORD_VERIFIER, await encrypt(PASSWORD_VERIFIER_PLAINTEXT, password));
+
+  const first = accounts[0]!;
+  masterPassword = password;
+  activeAccountId = first.id;
+  await setItem(STORAGE_KEYS.ACTIVE_ACCOUNT_ID, first.id);
+  resetLockTimer();
+  return first.address;
 }
 
 // ===== Add account (reuses master password) =====
 
 export async function addAccountGenerate(label?: string): Promise<string> {
-  const pw = getMasterPassword();
+  const pw = await ensureMasterPassword();
   const privateKey = generatePrivateKey();
   const account = decryptToAccount(privateKey);
-  return appendAndActivate(privateKey, account, label ?? await getNextLabel(), pw);
+  return appendPrivateAndActivate(privateKey, account, label ?? await getNextLabel(), pw);
 }
 
 export async function addAccountPrivateKey(privateKey: `0x${string}`, label?: string): Promise<string> {
-  const pw = getMasterPassword();
+  const pw = await ensureMasterPassword();
   const account = decryptToAccount(privateKey);
-  return appendAndActivate(privateKey, account, label ?? await getNextLabel(), pw);
+  return appendPrivateAndActivate(privateKey, account, label ?? await getNextLabel(), pw);
 }
 
 export async function addAccountMnemonic(mnemonic: string, label?: string): Promise<string> {
-  const pw = getMasterPassword();
+  const pw = await ensureMasterPassword();
   const account = decryptToAccount(mnemonic);
-  return appendAndActivate(mnemonic, account, label ?? await getNextLabel(), pw);
+  return appendPrivateAndActivate(mnemonic, account, label ?? await getNextLabel(), pw);
+}
+
+/** Append one or more Ledger accounts to an existing wallet. Returns the address of the first added account. */
+export async function addLedgerAccounts(seeds: LedgerAccountSeed[]): Promise<string> {
+  if (seeds.length === 0) throw new Error('Pick at least one Ledger address');
+  await ensureMasterPassword(); // rehydrate session if SW restarted during the Ledger flow
+
+  const accounts = await getStoredAccounts();
+  const existingAddrs = new Set(accounts.map((a) => a.address.toLowerCase()));
+  let addedFirst: StoredAccount | null = null;
+  for (const seed of seeds) {
+    if (existingAddrs.has(seed.address.toLowerCase())) continue;
+    const id = crypto.randomUUID();
+    const stored: StoredAccount = {
+      id,
+      label: seed.label?.trim() || nextAccountLabel(accounts.length),
+      type: 'ledger',
+      address: seed.address,
+      derivationPath: seed.derivationPath,
+      createdAt: Date.now(),
+    };
+    accounts.push(stored);
+    if (!addedFirst) addedFirst = stored;
+  }
+  await saveStoredAccounts(accounts);
+
+  if (addedFirst) {
+    activeAccountId = addedFirst.id;
+    await setItem(STORAGE_KEYS.ACTIVE_ACCOUNT_ID, addedFirst.id);
+    resetLockTimer();
+    return addedFirst.address;
+  }
+  // All seeds were duplicates — keep current active.
+  return (await getActiveAccountInfo()).address;
 }
 
 // ===== Unlock / Lock =====
 
 export async function unlock(password: string): Promise<string> {
-  const accounts = await getStoredAccounts();
+  if (!password) throw new Error('Password is required');
+  let accounts = await getStoredAccounts();
   if (accounts.length === 0) {
     const legacy = await getItem<EncryptedData>(STORAGE_KEYS.ENCRYPTED_KEY);
     if (!legacy) throw new Error('No wallet found. Please create or import one.');
@@ -248,11 +396,13 @@ export async function unlock(password: string): Promise<string> {
     const id = crypto.randomUUID();
     const stored: StoredAccount = {
       id, label: 'Account 1', encrypted: legacy,
+      type: 'private',
       address: account.address, createdAt: Date.now(),
     };
     await saveStoredAccounts([stored]);
     await removeItem(STORAGE_KEYS.ENCRYPTED_KEY);
     masterPassword = password;
+    await ensurePasswordVerifier(password);
     unlockedAccounts.set(id, account);
     activeAccountId = id;
     await setItem(STORAGE_KEYS.ACTIVE_ACCOUNT_ID, id);
@@ -260,19 +410,22 @@ export async function unlock(password: string): Promise<string> {
     return account.address;
   }
 
-  const savedActiveId = await getItem<string>(STORAGE_KEYS.ACTIVE_ACCOUNT_ID);
-  const targetAccount = resolveActiveAccount(accounts, savedActiveId) ?? accounts[0];
+  // Validate password (and backfill the verifier for legacy wallets).
+  await verifyPassword(password, accounts);
 
-  const plaintext = await decrypt(targetAccount.encrypted, password);
-  const viemAccount = decryptToAccount(plaintext);
+  const savedActiveId = await getItem<string>(STORAGE_KEYS.ACTIVE_ACCOUNT_ID);
+  const targetAccount = resolveActiveAccount(accounts, savedActiveId) ?? accounts[0]!;
 
   masterPassword = password;
   unlockedAccounts.clear();
-  unlockedAccounts.set(targetAccount.id, viemAccount);
+  if (!isLedger(targetAccount) && targetAccount.encrypted) {
+    const plaintext = await decrypt(targetAccount.encrypted, password);
+    unlockedAccounts.set(targetAccount.id, decryptToAccount(plaintext));
+  }
   activeAccountId = targetAccount.id;
   await setItem(STORAGE_KEYS.ACTIVE_ACCOUNT_ID, targetAccount.id);
   resetLockTimer();
-  return viemAccount.address;
+  return targetAccount.address;
 }
 
 export async function lock(): Promise<void> {
@@ -308,7 +461,7 @@ export async function removeAccount(accountId: string): Promise<void> {
   if (activeAccountId === accountId) {
     activeAccountId = filtered[0].id;
     await setItem(STORAGE_KEYS.ACTIVE_ACCOUNT_ID, activeAccountId);
-    if (masterPassword) {
+    if (masterPassword && !isLedger(filtered[0]) && filtered[0].encrypted) {
       const plaintext = await decrypt(filtered[0].encrypted, masterPassword);
       unlockedAccounts.set(filtered[0].id, decryptToAccount(plaintext));
     }
@@ -321,11 +474,15 @@ export async function deleteWallet(): Promise<void> {
   await removeItem(STORAGE_KEYS.ACCOUNTS);
   await removeItem(STORAGE_KEYS.ACTIVE_ACCOUNT_ID);
   await removeItem(STORAGE_KEYS.ENCRYPTED_KEY);
+  await removeItem(STORAGE_KEYS.PASSWORD_VERIFIER);
 }
 
 export async function exportPrivateKey(accountId: string, password: string): Promise<string> {
   const accounts = await getStoredAccounts();
   const target = accounts.find((a) => a.id === accountId);
   if (!target) throw new Error('Account not found');
+  if (isLedger(target) || !target.encrypted) {
+    throw new Error('Cannot export — this account is a Ledger hardware wallet');
+  }
   return decrypt(target.encrypted, password);
 }

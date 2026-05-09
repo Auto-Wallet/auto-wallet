@@ -8,10 +8,17 @@ import { NetworkPage } from './pages/NetworkPage';
 import { TxLogPage } from './pages/TxLogPage';
 import { SettingsPage } from './pages/SettingsPage';
 import { AccountMenu } from './pages/AccountMenu';
+import { LedgerBadge } from './LedgerBadge';
 
 type Page = 'loading' | 'setup' | 'unlock' | 'account' | 'whitelist' | 'networks' | 'txlog' | 'settings';
 
-interface AccountInfo { id: string; label: string; address: string; }
+interface AccountInfo {
+  id: string;
+  label: string;
+  address: string;
+  type: 'private' | 'ledger';
+  derivationPath?: string;
+}
 
 const NAV_ITEMS: { page: Page; label: string }[] = [
   { page: 'account', label: 'Wallet' },
@@ -78,7 +85,10 @@ export default function App() {
             <div ref={menuRef} style={{ position: 'relative' }}>
               <button onClick={() => setShowAccountMenu(!showAccountMenu)} className="account-trigger">
                 <span className="account-trigger-dot" />
-                <span className="account-trigger-label">{activeAccount?.label ?? 'Account'}</span>
+                <span className="account-trigger-label">
+                  {activeAccount?.type === 'ledger' && <LedgerBadge title="Ledger hardware wallet" />}
+                  {activeAccount?.label ?? 'Account'}
+                </span>
                 <span className="account-trigger-addr">{shortAddr}</span>
                 <span className="account-trigger-chevron">&#9662;</span>
               </button>

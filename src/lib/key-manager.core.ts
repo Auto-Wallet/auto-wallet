@@ -6,18 +6,25 @@ import type { EncryptedData } from './crypto';
 
 // --- Types (shared with key-manager.ts IO layer) ---
 
+export type AccountType = 'private' | 'ledger';
+
 export interface StoredAccount {
   id: string;
   label: string;
-  encrypted: EncryptedData;
   address: string;
   createdAt: number;
+  // Optional fields — undefined `type` means legacy 'private'.
+  type?: AccountType;
+  encrypted?: EncryptedData; // present for type === 'private'
+  derivationPath?: string;   // present for type === 'ledger'
 }
 
 export interface AccountInfo {
   id: string;
   label: string;
   address: string;
+  type: AccountType;
+  derivationPath?: string;
 }
 
 export interface SessionData {
@@ -26,7 +33,20 @@ export interface SessionData {
   lastActivity: number;
 }
 
+// Plaintext encrypted into the password verifier blob. The actual value doesn't
+// matter — we only check that decryption succeeds with the given password.
+export const PASSWORD_VERIFIER_PLAINTEXT = 'auto-wallet-verifier-v1';
+
 // --- Pure functions ---
+
+/** Default account type for stored accounts that predate the `type` field. */
+export function accountType(stored: StoredAccount): AccountType {
+  return stored.type ?? 'private';
+}
+
+export function isLedger(stored: StoredAccount): boolean {
+  return accountType(stored) === 'ledger';
+}
 
 /**
  * Convert a decrypted plaintext (private key or mnemonic) into a viem account.
@@ -77,5 +97,11 @@ export function nextAccountLabel(existingCount: number): string {
 
 /** Extract public AccountInfo from a StoredAccount. */
 export function toAccountInfo(stored: StoredAccount): AccountInfo {
-  return { id: stored.id, label: stored.label, address: stored.address };
+  return {
+    id: stored.id,
+    label: stored.label,
+    address: stored.address,
+    type: accountType(stored),
+    derivationPath: stored.derivationPath,
+  };
 }

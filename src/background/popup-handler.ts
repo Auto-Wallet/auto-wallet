@@ -5,7 +5,10 @@ import * as tokenManager from '../lib/token-manager';
 import * as txLogger from '../lib/tx-logger';
 import { getClient } from '../lib/network-manager';
 import { getItem, setItem, STORAGE_KEYS } from '../lib/storage';
-import { formatEther, parseEther, parseUnits, encodeFunctionData, erc20Abi, hexToBigInt } from 'viem';
+import {
+  formatEther, parseEther, parseUnits, encodeFunctionData, erc20Abi, hexToBigInt,
+  serializeTransaction, type TransactionSerializable,
+} from 'viem';
 import { genId } from '../types/messages';
 import type { WhitelistRule } from '../types/whitelist';
 import type { Network } from '../types/network';
@@ -56,6 +59,8 @@ export async function handlePopupAction(action: string, payload: any): Promise<u
     }
     case 'getActiveAccountId':
       return await keyManager.getActiveAccountId();
+    case 'getActiveAccountInfo':
+      return keyManager.getActiveAccountInfo();
     case 'deleteWallet':
       return keyManager.deleteWallet();
     case 'exportPrivateKey':
@@ -77,6 +82,22 @@ export async function handlePopupAction(action: string, payload: any): Promise<u
       emitAccountsChanged([addr]);
       return addr;
     }
+
+    // --- Ledger ---
+    case 'setupLedgerWallet': {
+      const addr = await keyManager.setupLedgerWallet(payload.password, payload.seeds);
+      emitAccountsChanged([addr]);
+      return addr;
+    }
+    case 'addLedgerAccounts': {
+      const addr = await keyManager.addLedgerAccounts(payload.seeds);
+      emitAccountsChanged([addr]);
+      return addr;
+    }
+    case 'prepareLedgerSendTx':
+      return prepareLedgerSendTx(payload);
+    case 'broadcastSignedTx':
+      return broadcastSignedTx(payload);
 
     // --- Balance ---
     case 'getNativeBalance': {
@@ -357,6 +378,198 @@ async function getFeeSuggestions(req: FeeSuggestionsRequest): Promise<FeeSuggest
     maxPriorityFeePerGas: priority?.toString() ?? null,
     gasPrice: gasPrice?.toString() ?? null,
   };
+}
+
+// --- Ledger send-tx preparation & raw broadcast ---
+
+interface LedgerPrepArgs {
+  kind: 'native' | 'token';
+  to: string;
+  amount: string;
+  tokenAddress?: string;
+  decimals?: number;
+  fee: FeeOverrideInput | null;
+}
+
+interface SerializedTxJSON {
+  type: 'eip1559' | 'legacy';
+  to: `0x${string}`;
+  value: string;
+  data?: `0x${string}`;
+  gas: string;
+  nonce: number;
+  chainId: number;
+  maxFeePerGas?: string;
+  maxPriorityFeePerGas?: string;
+  gasPrice?: string;
+}
+
+async function prepareLedgerSendTx(args: LedgerPrepArgs): Promise<{ unsignedHex: string; txJson: SerializedTxJSON }> {
+  const info = await keyManager.getActiveAccountInfo();
+  if (info.type !== 'ledger') throw new Error('Active account is not a Ledger account');
+
+  const network = await networkManager.getActiveNetwork();
+  const publicClient = await getClient(network.chainId);
+
+  let txTo: `0x${string}`;
+  let value: bigint;
+  let data: `0x${string}` | undefined;
+  if (args.kind === 'native') {
+    txTo = args.to as `0x${string}`;
+    value = parseEther(args.amount);
+    data = undefined;
+  } else {
+    if (!args.tokenAddress || args.decimals === undefined) {
+      throw new Error('Token send requires tokenAddress and decimals');
+    }
+    txTo = args.tokenAddress as `0x${string}`;
+    value = 0n;
+    const amt = parseUnits(args.amount, args.decimals);
+    data = encodeFunctionData({
+      abi: erc20Abi,
+      functionName: 'transfer',
+      args: [args.to as `0x${string}`, amt],
+    });
+  }
+
+  const feeApplied = applyFeeOverride(args.fee);
+  const gas = await resolveGas(publicClient, feeApplied.txArgs.gas, {
+    from: info.address, to: txTo, data, value,
+  });
+
+  const nonce = await publicClient.getTransactionCount({
+    address: info.address as `0x${string}`,
+    blockTag: 'pending',
+  });
+
+  // Decide between EIP-1559 and legacy. User override > chain auto-detect.
+  let type: 'eip1559' | 'legacy';
+  let maxFeePerGas: bigint | undefined;
+  let maxPriorityFeePerGas: bigint | undefined;
+  let gasPrice: bigint | undefined;
+
+  if (feeApplied.txArgs.maxFeePerGas) {
+    type = 'eip1559';
+    maxFeePerGas = feeApplied.txArgs.maxFeePerGas;
+    maxPriorityFeePerGas = feeApplied.txArgs.maxPriorityFeePerGas ?? maxFeePerGas;
+  } else if (feeApplied.txArgs.gasPrice) {
+    type = 'legacy';
+    gasPrice = feeApplied.txArgs.gasPrice;
+  } else {
+    try {
+      const block = await publicClient.getBlock({ blockTag: 'latest' });
+      if (block.baseFeePerGas !== null && block.baseFeePerGas !== undefined) {
+        const fees = await publicClient.estimateFeesPerGas();
+        type = 'eip1559';
+        maxFeePerGas = fees.maxFeePerGas!;
+        maxPriorityFeePerGas = fees.maxPriorityFeePerGas!;
+      } else {
+        type = 'legacy';
+        gasPrice = await publicClient.getGasPrice();
+      }
+    } catch {
+      type = 'legacy';
+      gasPrice = await publicClient.getGasPrice();
+    }
+  }
+
+  const txObject: TransactionSerializable = type === 'eip1559'
+    ? {
+        type: 'eip1559',
+        chainId: network.chainId,
+        nonce,
+        to: txTo,
+        value,
+        data,
+        gas,
+        maxFeePerGas: maxFeePerGas!,
+        maxPriorityFeePerGas: maxPriorityFeePerGas!,
+      }
+    : {
+        type: 'legacy',
+        chainId: network.chainId,
+        nonce,
+        to: txTo,
+        value,
+        data,
+        gas,
+        gasPrice: gasPrice!,
+      };
+
+  const unsignedHexWithPrefix = serializeTransaction(txObject);
+  const unsignedHex = unsignedHexWithPrefix.startsWith('0x')
+    ? unsignedHexWithPrefix.slice(2)
+    : unsignedHexWithPrefix;
+
+  const txJson: SerializedTxJSON = {
+    type,
+    to: txTo,
+    value: value.toString(),
+    data,
+    gas: gas.toString(),
+    nonce,
+    chainId: network.chainId,
+    maxFeePerGas: maxFeePerGas?.toString(),
+    maxPriorityFeePerGas: maxPriorityFeePerGas?.toString(),
+    gasPrice: gasPrice?.toString(),
+  };
+
+  return { unsignedHex, txJson };
+}
+
+interface BroadcastArgs {
+  rawTx: `0x${string}`;
+  meta: {
+    to: string;
+    value: string;
+    data?: string;
+    chainId: number;
+    origin?: string;
+    autoSigned?: boolean;
+    methodSelector?: string;
+    gasLimit?: string;
+    maxFeePerGas?: string;
+    maxPriorityFeePerGas?: string;
+    gasPrice?: string;
+  };
+}
+
+async function broadcastSignedTx({ rawTx, meta }: BroadcastArgs): Promise<{ hash: string }> {
+  const info = await keyManager.getActiveAccountInfo();
+  const network = await networkManager.getActiveNetwork();
+  const publicClient = await getClient(meta.chainId ?? network.chainId);
+
+  const hash = await publicClient.sendRawTransaction({ serializedTransaction: rawTx });
+
+  const logId = genId();
+  await txLogger.appendLog({
+    id: logId,
+    timestamp: Date.now(),
+    chainId: meta.chainId ?? network.chainId,
+    from: info.address,
+    to: meta.to,
+    value: meta.value,
+    hash,
+    method: meta.methodSelector,
+    origin: meta.origin ?? 'Auto Wallet',
+    autoSigned: !!meta.autoSigned,
+    status: 'pending',
+    gasLimit: meta.gasLimit,
+    maxFeePerGas: meta.maxFeePerGas,
+    maxPriorityFeePerGas: meta.maxPriorityFeePerGas,
+    gasPrice: meta.gasPrice,
+  });
+
+  pollTxReceipt(
+    logId,
+    meta.chainId ?? network.chainId,
+    hash,
+    meta.origin ?? 'Auto Wallet',
+    !!meta.autoSigned,
+    network.blockExplorerUrl,
+  );
+
+  return { hash };
 }
 
 // Resolve a gas limit: estimate when not provided, then buffer ×1.2.

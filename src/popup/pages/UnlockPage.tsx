@@ -7,6 +7,7 @@ export function UnlockPage({ onUnlock }: { onUnlock: () => void }) {
   const [loading, setLoading] = useState(false);
 
   const handleUnlock = async () => {
+    if (!password) { setError('Password is required'); return; }
     setLoading(true);
     setError('');
     try {

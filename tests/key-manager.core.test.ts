@@ -185,8 +185,33 @@ describe('toAccountInfo', () => {
       address: '0xABCD',
     });
     const info = toAccountInfo(stored);
-    expect(info).toEqual({ id: 'x', label: 'My Wallet', address: '0xABCD' });
+    expect(info).toEqual({
+      id: 'x',
+      label: 'My Wallet',
+      address: '0xABCD',
+      type: 'private',
+      derivationPath: undefined,
+    });
     expect((info as any).encrypted).toBeUndefined();
     expect((info as any).createdAt).toBeUndefined();
+  });
+
+  test('marks ledger accounts and includes derivationPath', () => {
+    const stored = {
+      id: 'l',
+      label: 'Ledger 1',
+      address: '0xDEAD',
+      createdAt: 0,
+      type: 'ledger' as const,
+      derivationPath: "44'/60'/0'/0/0",
+    };
+    const info = toAccountInfo(stored);
+    expect(info).toEqual({
+      id: 'l',
+      label: 'Ledger 1',
+      address: '0xDEAD',
+      type: 'ledger',
+      derivationPath: "44'/60'/0'/0/0",
+    });
   });
 });

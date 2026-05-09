@@ -13,9 +13,16 @@ export interface FeeOverride {
   gasPrice: string | null;
 }
 
+/**
+ * When the active account is a Ledger, the confirm popup performs the
+ * actual signing locally (WebHID is unavailable in the service worker).
+ * `signedRawTx` is set for transactions, `signature` for sign-message flows.
+ */
 export interface ConfirmResult {
   approved: boolean;
   feeOverride?: FeeOverride | null;
+  signedRawTx?: `0x${string}` | null;
+  signature?: `0x${string}` | null;
 }
 
 interface PendingConfirmation {
@@ -25,11 +32,38 @@ interface PendingConfirmation {
 
 const pendingConfirmations = new Map<string, PendingConfirmation>();
 
+export interface SerializedTxJSON {
+  type: 'eip1559' | 'legacy';
+  to: `0x${string}`;
+  value: string;
+  data?: `0x${string}`;
+  gas: string;
+  nonce: number;
+  chainId: number;
+  maxFeePerGas?: string;
+  maxPriorityFeePerGas?: string;
+  gasPrice?: string;
+}
+
+export interface LedgerConfirmContext {
+  derivationPath: string;
+  // For eth_sendTransaction: the prepared unsigned tx (popup signs, re-serializes, returns rawTx)
+  txJson?: SerializedTxJSON;
+  // For personal_sign: hex of the raw message bytes
+  messageHex?: string;
+  // For eth_signTypedData_v4: 32-byte hashes (popup uses the hashed-message API)
+  domainSeparator?: `0x${string}`;
+  hashStructMessage?: `0x${string}`;
+}
+
 export interface ConfirmRequest {
   id: string;
   method: string;
   origin: string;
   params: unknown;
+  signerAddress?: string;
+  chainId?: number;
+  ledger?: LedgerConfirmContext;
 }
 
 /** Open a confirmation popup and wait for user to approve or reject. */
@@ -78,6 +112,8 @@ chrome.runtime.onMessage.addListener((message) => {
     pending.resolve({
       approved: message.approved === true,
       feeOverride: message.feeOverride ?? null,
+      signedRawTx: message.signedRawTx ?? null,
+      signature: message.signature ?? null,
     });
 
     // If user toggled "Trust this site", add origin to whitelist

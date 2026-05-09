@@ -1,8 +1,25 @@
+import '../lib/node-polyfills';
 import React, { useState, useEffect } from 'react';
 import { createRoot } from 'react-dom/client';
 import { MSG_SOURCE } from '../types/messages';
 import { FeeEditor, type FeeOverride, type FeeEditorRequest } from '../popup/FeeEditor';
+import { LedgerBadge } from '../popup/LedgerBadge';
+import {
+  signTransaction as ledgerSignTransaction,
+  signPersonalMessage as ledgerSignPersonalMessage,
+  signTypedDataHashed as ledgerSignTypedDataHashed,
+} from '../lib/ledger';
+import { buildSignedRawTx, hydrateTx, type SerializedTxJSON } from '../popup/ledger-signer';
+import { serializeTransaction, type TransactionSerializable } from 'viem';
 import '../popup/styles.css';
+
+interface LedgerCtx {
+  derivationPath: string;
+  txJson?: SerializedTxJSON;
+  messageHex?: string;
+  domainSeparator?: `0x${string}`;
+  hashStructMessage?: `0x${string}`;
+}
 
 interface PendingRequest {
   id: string;
@@ -11,6 +28,7 @@ interface PendingRequest {
   params: any;
   signerAddress?: string;
   chainId?: number;
+  ledger?: LedgerCtx;
 }
 
 function prettyTypedData(value: unknown): string {
@@ -29,6 +47,9 @@ function ConfirmPage() {
   const [request, setRequest] = useState<PendingRequest | null>(null);
   const [addToWhitelist, setAddToWhitelist] = useState(false);
   const [feeOverride, setFeeOverride] = useState<FeeOverride | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [busyMsg, setBusyMsg] = useState('');
+  const [error, setError] = useState('');
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -41,17 +62,87 @@ function ConfirmPage() {
     }
   }, []);
 
-  function approve() {
-    chrome.runtime.sendMessage({
-      source: MSG_SOURCE,
-      type: 'confirm_response',
-      requestId: request?.id,
-      approved: true,
-      addToWhitelist,
-      origin: request?.origin,
-      feeOverride: request?.method === 'eth_sendTransaction' ? feeOverride : null,
-    });
-    window.close();
+  function applyFeeToTxJson(json: SerializedTxJSON, fee: FeeOverride | null): SerializedTxJSON {
+    if (!fee) return json;
+    const next: SerializedTxJSON = { ...json };
+    if (fee.gas) next.gas = fee.gas;
+    if (fee.type === 'eip1559') {
+      next.type = 'eip1559';
+      if (fee.maxFeePerGas) next.maxFeePerGas = fee.maxFeePerGas;
+      if (fee.maxPriorityFeePerGas) next.maxPriorityFeePerGas = fee.maxPriorityFeePerGas;
+      next.gasPrice = undefined;
+    } else if (fee.type === 'legacy') {
+      next.type = 'legacy';
+      if (fee.gasPrice) next.gasPrice = fee.gasPrice;
+      next.maxFeePerGas = undefined;
+      next.maxPriorityFeePerGas = undefined;
+    }
+    return next;
+  }
+
+  async function approve() {
+    setError('');
+    const ledger = request?.ledger;
+    if (!ledger) {
+      // Software signing happens server-side
+      chrome.runtime.sendMessage({
+        source: MSG_SOURCE,
+        type: 'confirm_response',
+        requestId: request?.id,
+        approved: true,
+        addToWhitelist,
+        origin: request?.origin,
+        feeOverride: request?.method === 'eth_sendTransaction' ? feeOverride : null,
+      });
+      window.close();
+      return;
+    }
+
+    // Ledger signing in this window
+    try {
+      setBusy(true);
+      let signedRawTx: `0x${string}` | null = null;
+      let signature: `0x${string}` | null = null;
+
+      if (request!.method === 'eth_sendTransaction' && ledger.txJson) {
+        setBusyMsg('Confirm on your Ledger device…');
+        const finalTx = applyFeeToTxJson(ledger.txJson, feeOverride);
+        // Re-serialize unsigned hex with the (potentially edited) fee values
+        const unsignedHex = serializeTransaction(hydrateTx(finalTx) as TransactionSerializable)
+          .replace(/^0x/, '');
+        const sig = await ledgerSignTransaction(ledger.derivationPath, unsignedHex);
+        signedRawTx = buildSignedRawTx(finalTx, sig);
+      } else if ((request!.method === 'personal_sign' || request!.method === 'eth_sign') && ledger.messageHex) {
+        setBusyMsg('Confirm on your Ledger device…');
+        signature = await ledgerSignPersonalMessage(ledger.derivationPath, ledger.messageHex);
+      } else if (
+        (request!.method === 'eth_signTypedData_v4' || request!.method === 'eth_signTypedData') &&
+        ledger.domainSeparator && ledger.hashStructMessage
+      ) {
+        setBusyMsg('Confirm on your Ledger device (blind sign typed data)…');
+        signature = await ledgerSignTypedDataHashed(
+          ledger.derivationPath, ledger.domainSeparator, ledger.hashStructMessage,
+        );
+      } else {
+        throw new Error('Ledger context is missing required fields for this method');
+      }
+
+      chrome.runtime.sendMessage({
+        source: MSG_SOURCE,
+        type: 'confirm_response',
+        requestId: request!.id,
+        approved: true,
+        addToWhitelist: false,    // ledger always requires user; whitelist is meaningless
+        origin: request!.origin,
+        signedRawTx,
+        signature,
+      });
+      window.close();
+    } catch (e: any) {
+      setError(e?.message ?? String(e));
+      setBusy(false);
+      setBusyMsg('');
+    }
   }
 
   function reject() {
@@ -73,6 +164,7 @@ function ConfirmPage() {
   }
 
   const tx = request.params?.[0] ?? {};
+  const isLedger = !!request.ledger;
   const isTransaction = request.method === 'eth_sendTransaction';
   const isPersonalSign = request.method === 'personal_sign' || request.method === 'eth_sign';
   const isTypedData = request.method === 'eth_signTypedData_v4' || request.method === 'eth_signTypedData';
@@ -91,12 +183,33 @@ function ConfirmPage() {
     ? { to: tx.to, from: tx.from, data: tx.data, value: tx.value }
     : null;
 
+  // For Ledger sends, prefill FeeEditor from the prepared tx (which already has resolved fees).
+  const ledgerTxJson = request.ledger?.txJson;
+  const feePrefill = isTransaction
+    ? (ledgerTxJson
+        ? {
+            gas: ledgerTxJson.gas ? `0x${BigInt(ledgerTxJson.gas).toString(16)}` : undefined,
+            maxFeePerGas: ledgerTxJson.maxFeePerGas ? `0x${BigInt(ledgerTxJson.maxFeePerGas).toString(16)}` : undefined,
+            maxPriorityFeePerGas: ledgerTxJson.maxPriorityFeePerGas ? `0x${BigInt(ledgerTxJson.maxPriorityFeePerGas).toString(16)}` : undefined,
+            gasPrice: ledgerTxJson.gasPrice ? `0x${BigInt(ledgerTxJson.gasPrice).toString(16)}` : undefined,
+          }
+        : {
+            gas: tx.gas ?? tx.gasLimit,
+            maxFeePerGas: tx.maxFeePerGas,
+            maxPriorityFeePerGas: tx.maxPriorityFeePerGas,
+            gasPrice: tx.gasPrice,
+          })
+    : undefined;
+
   return (
     <div className="confirm-shell">
       {/* Header */}
       <header className="confirm-header">
         <img src="icons/icon48.png" alt="" style={{ width: 24, height: 24 }} />
-        <span className="confirm-header-title">Confirm Request</span>
+        <span className="confirm-header-title">
+          {isLedger && <LedgerBadge title="Ledger hardware wallet" />}
+          Confirm Request
+        </span>
       </header>
 
       {/* Body */}
@@ -115,6 +228,7 @@ function ConfirmPage() {
                 <div className="confirm-field" style={{ marginBottom: 0 }}>
                   <span className="confirm-label">Signer</span>
                   <span className="confirm-value mono" style={{ fontSize: 10 }}>
+                    {isLedger && <LedgerBadge title="Ledger hardware wallet" />}
                     {request.signerAddress.slice(0, 8)}...{request.signerAddress.slice(-6)}
                   </span>
                 </div>
@@ -169,12 +283,7 @@ function ConfirmPage() {
         {feeRequest && (
           <FeeEditor
             request={feeRequest}
-            prefill={{
-              gas: tx.gas ?? tx.gasLimit,
-              maxFeePerGas: tx.maxFeePerGas,
-              maxPriorityFeePerGas: tx.maxPriorityFeePerGas,
-              gasPrice: tx.gasPrice,
-            }}
+            prefill={feePrefill}
             onChange={setFeeOverride}
           />
         )}
@@ -223,41 +332,56 @@ function ConfirmPage() {
           </div>
         )}
 
-        {/* Whitelist toggle */}
-        <div className="card" style={{ padding: 12 }}>
-          <div className="settings-row" style={{ padding: 0 }}>
-            <div style={{ flex: 1 }}>
-              <p style={{ fontSize: 12, fontWeight: 500, color: 'var(--text-primary)' }}>
-                Trust this site
-              </p>
-              <p style={{ fontSize: 10, color: 'var(--text-muted)', marginTop: 2 }}>
-                Auto-sign all future requests from <strong>{domain}</strong>
-              </p>
+        {/* Whitelist toggle (hidden for Ledger — auto-sign would be ineffective) */}
+        {!isLedger && (
+          <div className="card" style={{ padding: 12 }}>
+            <div className="settings-row" style={{ padding: 0 }}>
+              <div style={{ flex: 1 }}>
+                <p style={{ fontSize: 12, fontWeight: 500, color: 'var(--text-primary)' }}>
+                  Trust this site
+                </p>
+                <p style={{ fontSize: 10, color: 'var(--text-muted)', marginTop: 2 }}>
+                  Auto-sign all future requests from <strong>{domain}</strong>
+                </p>
+              </div>
+              <button
+                onClick={() => setAddToWhitelist(!addToWhitelist)}
+                className={`toggle ${addToWhitelist ? 'on' : ''}`}
+              >
+                <span className="toggle-knob" />
+              </button>
             </div>
-            <button
-              onClick={() => setAddToWhitelist(!addToWhitelist)}
-              className={`toggle ${addToWhitelist ? 'on' : ''}`}
-            >
-              <span className="toggle-knob" />
-            </button>
           </div>
-        </div>
+        )}
+
+        {isLedger && (
+          <div className="confirm-warning" style={{ fontSize: 11 }}>
+            <LedgerBadge title="Ledger hardware wallet" /> Approve and confirm on your Ledger device. Make sure the Ethereum app is open.
+          </div>
+        )}
 
         {/* Warning */}
-        <div className="confirm-warning" style={{ fontSize: 11 }}>
-          {addToWhitelist
-            ? 'This domain will be added to your auto-sign whitelist.'
-            : 'This request is not in your whitelist. Review carefully.'}
-        </div>
+        {!isLedger && (
+          <div className="confirm-warning" style={{ fontSize: 11 }}>
+            {addToWhitelist
+              ? 'This domain will be added to your auto-sign whitelist.'
+              : 'This request is not in your whitelist. Review carefully.'}
+          </div>
+        )}
+
+        {error && <p className="error-text">{error}</p>}
+        {busy && busyMsg && (
+          <p style={{ fontSize: 11, color: 'var(--text-muted)', textAlign: 'center' }}>{busyMsg}</p>
+        )}
       </main>
 
       {/* Footer */}
       <footer className="confirm-footer">
-        <button onClick={reject} className="btn-secondary" style={{ flex: 1 }}>
+        <button onClick={reject} disabled={busy} className="btn-secondary" style={{ flex: 1 }}>
           Reject
         </button>
-        <button onClick={approve} className="btn-primary" style={{ flex: 1 }}>
-          Approve
+        <button onClick={approve} disabled={busy} className="btn-primary" style={{ flex: 1 }}>
+          {busy ? 'Signing…' : 'Approve'}
         </button>
       </footer>
     </div>

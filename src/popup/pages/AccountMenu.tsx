@@ -1,12 +1,22 @@
 import React, { useState, useEffect } from 'react';
 import { callBackground } from '../api';
+import { LedgerPicker } from '../LedgerPicker';
+import { LedgerBadge } from '../LedgerBadge';
 
-interface AccountInfo { id: string; label: string; address: string; }
+interface AccountInfo {
+  id: string;
+  label: string;
+  address: string;
+  type: 'private' | 'ledger';
+  derivationPath?: string;
+}
+
+type AddMode = null | 'create' | 'import-pk' | 'import-mnemonic' | 'import-ledger';
 
 export function AccountMenu({ onSwitch, onClose }: { onSwitch: () => void; onClose: () => void }) {
   const [accounts, setAccounts] = useState<AccountInfo[]>([]);
   const [activeId, setActiveId] = useState('');
-  const [addMode, setAddMode] = useState<null | 'create' | 'import-pk' | 'import-mnemonic'>(null);
+  const [addMode, setAddMode] = useState<AddMode>(null);
   const [label, setLabel] = useState('');
   const [input, setInput] = useState('');
   const [error, setError] = useState('');
@@ -41,11 +51,27 @@ export function AccountMenu({ onSwitch, onClose }: { onSwitch: () => void; onClo
       } else if (addMode === 'import-pk') {
         const pk = input.trim().startsWith('0x') ? input.trim() : `0x${input.trim()}`;
         await callBackground('addAccountPrivateKey', { privateKey: pk, label: lbl });
-      } else {
+      } else if (addMode === 'import-mnemonic') {
         await callBackground('addAccountMnemonic', { mnemonic: input.trim(), label: lbl });
       }
       setAddMode(null); setLabel(''); setInput('');
       onSwitch(); // refresh parent
+    } catch (e: any) { setError(e.message); }
+    setLoading(false);
+  }
+
+  async function handleAddLedger(seeds: { address: string; derivationPath: string }[]) {
+    setLoading(true);
+    setError('');
+    try {
+      // Use the typed name for the first selected; subsequent selections fall back to default labels.
+      const enriched = seeds.map((s, i) => ({
+        ...s,
+        label: i === 0 && label.trim() ? label.trim() : undefined,
+      }));
+      await callBackground('addLedgerAccounts', { seeds: enriched });
+      setAddMode(null); setLabel(''); setInput('');
+      onSwitch();
     } catch (e: any) { setError(e.message); }
     setLoading(false);
   }
@@ -94,7 +120,10 @@ export function AccountMenu({ onSwitch, onClose }: { onSwitch: () => void; onClo
             ) : (
               <>
                 <button className="account-menu-item-main" onClick={() => switchTo(a.id)}>
-                  <span className="account-menu-item-label">{a.label}</span>
+                  <span className="account-menu-item-label">
+                    {a.type === 'ledger' && <LedgerBadge title="Ledger hardware wallet" />}
+                    {a.label}
+                  </span>
                   <span className="account-menu-item-addr mono">
                     {a.address.slice(0, 6)}...{a.address.slice(-4)}
                   </span>
@@ -124,28 +153,40 @@ export function AccountMenu({ onSwitch, onClose }: { onSwitch: () => void; onClo
           </button>
         ) : (
           <div className="stack stack-xs" style={{ padding: 4 }}>
-            <div className="row gap-xs">
-              {(['create', 'import-pk', 'import-mnemonic'] as const).map((m) => (
-                <button key={m} onClick={() => setAddMode(m)} className="account-menu-tab" data-active={addMode === m}>
-                  {m === 'create' ? 'New' : m === 'import-pk' ? 'Key' : 'Mnemonic'}
+            <div className="row gap-xs" style={{ flexWrap: 'wrap' }}>
+              {(['create', 'import-pk', 'import-mnemonic', 'import-ledger'] as const).map((m) => (
+                <button key={m} onClick={() => { setAddMode(m); setError(''); }} className="account-menu-tab" data-active={addMode === m}>
+                  {m === 'create' ? 'New' : m === 'import-pk' ? 'Key' : m === 'import-mnemonic' ? 'Mnemonic' : 'Ledger'}
                 </button>
               ))}
             </div>
             <input className="input-field" placeholder="Name" value={label}
               onChange={(e) => setLabel(e.target.value)}
               style={{ padding: '5px 8px', fontSize: 11, fontFamily: 'var(--font-sans)' }} />
-            {addMode !== 'create' && (
+            {(addMode === 'import-pk' || addMode === 'import-mnemonic') && (
               <textarea className="input-field" style={{ minHeight: 44, padding: '5px 8px', fontSize: 10 }}
                 placeholder={addMode === 'import-pk' ? '0x...' : 'word1 word2 ...'}
                 value={input} onChange={(e) => setInput(e.target.value)} />
             )}
+            {addMode === 'import-ledger' && (
+              <LedgerPicker
+                submitLabel="Add"
+                submitting={loading}
+                onSubmit={({ selected }) => handleAddLedger(selected)}
+              />
+            )}
             {error && <p className="error-text">{error}</p>}
-            <div className="row gap-xs">
-              <button onClick={handleAdd} disabled={loading} className="btn-primary" style={{ fontSize: 11, padding: '6px 10px' }}>
-                {loading ? '...' : 'Add'}
-              </button>
-              <button onClick={() => { setAddMode(null); setError(''); }} className="btn-ghost" style={{ fontSize: 11 }}>Cancel</button>
-            </div>
+            {addMode !== 'import-ledger' && (
+              <div className="row gap-xs">
+                <button onClick={handleAdd} disabled={loading} className="btn-primary" style={{ fontSize: 11, padding: '6px 10px' }}>
+                  {loading ? '...' : 'Add'}
+                </button>
+                <button onClick={() => { setAddMode(null); setError(''); }} className="btn-ghost" style={{ fontSize: 11 }}>Cancel</button>
+              </div>
+            )}
+            {addMode === 'import-ledger' && (
+              <button onClick={() => { setAddMode(null); setError(''); }} className="btn-ghost" style={{ fontSize: 11, alignSelf: 'flex-start' }}>Cancel</button>
+            )}
           </div>
         )}
       </div>

@@ -19,6 +19,7 @@ export async function removeItem(key: string): Promise<void> {
 export const STORAGE_KEYS = {
   ACCOUNTS: 'accounts',            // StoredAccount[]
   ACTIVE_ACCOUNT_ID: 'active_account_id',
+  PASSWORD_VERIFIER: 'password_verifier', // EncryptedData of fixed plaintext, used to verify password without a private-key account
   ENCRYPTED_KEY: 'encrypted_private_key', // legacy single-key (migration)
   NETWORKS: 'networks',
   ACTIVE_CHAIN_ID: 'active_chain_id',

@@ -859,6 +859,90 @@ body:has(.confirm-shell) {
 }
 .account-menu-lock-btn:hover { color: var(--danger); background: var(--danger-bg); }
 
+/* --- Ledger Badge --- */
+.ledger-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  margin-right: 4px;
+  border-radius: 4px;
+  background: #1d1d1f;
+  color: #fff;
+  flex-shrink: 0;
+  vertical-align: -3px;
+}
+.ledger-badge svg { display: block; }
+
+/* --- Ledger Address Picker Row --- */
+.ledger-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 8px 10px;
+  background: var(--bg-input);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: all .08s ease;
+  text-align: left;
+}
+.ledger-row:hover { border-color: var(--border-default); }
+.ledger-row[data-checked="true"] {
+  background: var(--accent-subtle);
+  border-color: var(--accent);
+}
+.ledger-row-idx {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--text-muted);
+  min-width: 24px;
+}
+.ledger-row-addr {
+  flex: 1;
+  font-size: 11px;
+  color: var(--text-primary);
+}
+.ledger-row-check {
+  width: 16px;
+  height: 16px;
+  border-radius: 4px;
+  border: 1px solid var(--border-default);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  background: #fff;
+  color: var(--accent);
+}
+.ledger-row-check[data-checked="true"] {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+.ledger-row[data-loading="true"] {
+  cursor: progress;
+}
+.ledger-row-loading {
+  flex: 1;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  color: var(--text-muted);
+}
+.spinner-inline {
+  width: 12px;
+  height: 12px;
+  border: 1.5px solid var(--border-subtle);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: spin .6s linear infinite;
+  flex-shrink: 0;
+}
+
 /* --- Settings Components --- */
 .settings-grid {
   display: grid;

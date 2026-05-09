@@ -6,7 +6,10 @@ type EventHandler = (...args: any[]) => void;
 
 class AutoWalletProvider {
   isAutoWallet = true;
-  isMetaMask = false; // don't impersonate MetaMask
+  // Flipped to `true` at injection time when no other wallet has claimed
+  // window.ethereum, so legacy "Connect Wallet" buttons that only look for
+  // MetaMask still work. We never claim it when another provider is present.
+  isMetaMask = false;
 
   private _events: Map<string, Set<EventHandler>> = new Map();
   private _chainId: string = '0x1';
@@ -182,10 +185,23 @@ announceProvider();
 // Check injectWindowEthereum setting to decide whether to inject window.ethereum
 // The content script bridge (ISOLATED world) reads the setting and passes it via
 // a custom event since inpage.ts (MAIN world) cannot access chrome.storage directly.
+function injectAsWindowEthereum(reason: string) {
+  const existing = (window as any).ethereum;
+  const hadOtherProvider = !!existing && existing !== provider;
+  (window as any).ethereum = provider;
+  // Only impersonate MetaMask when we're the sole provider on the page.
+  // If another wallet is present we leave `isMetaMask` false to avoid
+  // conflicting with their detection.
+  provider.isMetaMask = !hadOtherProvider;
+  console.log(
+    `[Auto Wallet] Injected as window.ethereum (${reason})` +
+      (provider.isMetaMask ? ' [isMetaMask=true for legacy compat]' : ''),
+  );
+}
+
 function handleInjectSetting(forceInject: boolean) {
   if (forceInject || !(window as any).ethereum) {
-    (window as any).ethereum = provider;
-    console.log('[Auto Wallet] Injected as window.ethereum' + (forceInject ? ' (force)' : ' (no existing provider)'));
+    injectAsWindowEthereum(forceInject ? 'force' : 'no existing provider');
   }
 }
 
@@ -200,8 +216,7 @@ window.addEventListener('message', (event) => {
 // Fallback: if no setting is received within 100ms, use default behavior
 const fallbackTimer = setTimeout(() => {
   if (!(window as any).ethereum) {
-    (window as any).ethereum = provider;
-    console.log('[Auto Wallet] No existing provider detected, injected as window.ethereum');
+    injectAsWindowEthereum('fallback timer');
   }
 }, 100);
 
