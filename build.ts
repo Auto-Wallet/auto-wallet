@@ -1,7 +1,25 @@
-import { copyFileSync, mkdirSync, existsSync, writeFileSync, renameSync, rmSync } from 'fs';
+import { copyFileSync, mkdirSync, existsSync, writeFileSync, renameSync, rmSync, readFileSync } from 'fs';
 import { join } from 'path';
 
 const DIST = join(import.meta.dir, 'dist');
+const envPath = join(import.meta.dir, '.env');
+
+function readLocalEnv(): Record<string, string> {
+  if (!existsSync(envPath)) return {};
+  const env: Record<string, string> = {};
+  for (const line of readFileSync(envPath, 'utf8').split(/\r?\n/)) {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith('#')) continue;
+    const idx = trimmed.indexOf('=');
+    if (idx === -1) continue;
+    const key = trimmed.slice(0, idx).trim();
+    const raw = trimmed.slice(idx + 1).trim();
+    env[key] = raw.replace(/^['"]|['"]$/g, '');
+  }
+  return env;
+}
+
+const localEnv = readLocalEnv();
 
 // Clean and create dist
 if (existsSync(DIST)) rmSync(DIST, { recursive: true });
@@ -16,6 +34,10 @@ async function buildEntry(entry: string, outputName: string) {
     outdir: tempDir,
     target: 'browser',
     minify: true,
+    define: {
+      __TENDERLY_ACCESS_TOKEN__: JSON.stringify(localEnv.TENDERLY_ACCESS_TOKEN ?? Bun.env.TENDERLY_ACCESS_TOKEN ?? ''),
+      __TENDERLY_API_URL__: JSON.stringify(localEnv.TENDERLY_API_URL ?? Bun.env.TENDERLY_API_URL ?? ''),
+    },
   });
   if (!result.success) {
     console.error(`Build failed for ${entry}:`, result.logs);

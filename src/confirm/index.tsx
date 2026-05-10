@@ -21,6 +21,23 @@ interface LedgerCtx {
   hashStructMessage?: `0x${string}`;
 }
 
+type SimulatedTokenChange = {
+  key: string;
+  symbol: string;
+  name?: string;
+  address?: string;
+  rawDelta: string;
+  formattedDelta: string;
+  direction: 'in' | 'out';
+};
+
+type SimulationPreview = {
+  status: 'success' | 'failed' | 'unavailable';
+  error?: string;
+  gasUsed?: string;
+  changes: SimulatedTokenChange[];
+};
+
 interface PendingRequest {
   id: string;
   method: string;
@@ -29,6 +46,7 @@ interface PendingRequest {
   signerAddress?: string;
   chainId?: number;
   ledger?: LedgerCtx;
+  simulation?: SimulationPreview;
 }
 
 function prettyTypedData(value: unknown): string {
@@ -41,6 +59,68 @@ function prettyTypedData(value: unknown): string {
     }
   }
   return JSON.stringify(value, null, 2);
+}
+
+function shortAddress(value?: string): string {
+  if (!value) return '';
+  return `${value.slice(0, 6)}...${value.slice(-4)}`;
+}
+
+function SimulationChanges({ simulation }: { simulation?: SimulationPreview }) {
+  if (!simulation) return null;
+
+  if (simulation.status === 'unavailable') {
+    return (
+      <div className="card" style={{ padding: 12 }}>
+        <div className="confirm-row" style={{ alignItems: 'center' }}>
+          <span className="confirm-label" style={{ marginBottom: 0 }}>Simulation</span>
+          <span className="simulation-pill unavailable">Unavailable</span>
+        </div>
+        {simulation.error && (
+          <p className="simulation-note">{simulation.error}</p>
+        )}
+      </div>
+    );
+  }
+
+  return (
+    <div className="card" style={{ padding: 12 }}>
+      <div className="confirm-row" style={{ alignItems: 'center', marginBottom: 8 }}>
+        <span className="confirm-label" style={{ marginBottom: 0 }}>Simulated Token Changes</span>
+        <span className={`simulation-pill ${simulation.status}`}>
+          {simulation.status === 'success' ? 'Success' : 'Failed'}
+        </span>
+      </div>
+      {simulation.error && (
+        <p className="simulation-note">{simulation.error}</p>
+      )}
+      {simulation.changes.length > 0 ? (
+        <div className="simulation-list">
+          {simulation.changes.map((change) => (
+            <div key={change.key} className="simulation-change-row">
+              <div className="simulation-token">
+                <span className={`simulation-token-dot ${change.direction}`} />
+                <div>
+                  <span className="simulation-token-symbol">{change.symbol}</span>
+                  {change.address && (
+                    <span className="simulation-token-address mono">{shortAddress(change.address)}</span>
+                  )}
+                </div>
+              </div>
+              <span className={`simulation-delta ${change.direction}`}>
+                {change.formattedDelta}
+              </span>
+            </div>
+          ))}
+        </div>
+      ) : (
+        <p className="simulation-note">No token balance changes detected.</p>
+      )}
+      {simulation.gasUsed && (
+        <p className="simulation-note">Estimated gas used: {simulation.gasUsed}</p>
+      )}
+    </div>
+  );
 }
 
 function ConfirmPage() {
@@ -278,6 +358,8 @@ function ConfirmPage() {
             )}
           </div>
         )}
+
+        {isTransaction && <SimulationChanges simulation={request.simulation} />}
 
         {/* Fee editor */}
         {feeRequest && (

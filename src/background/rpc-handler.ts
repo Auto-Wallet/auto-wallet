@@ -25,6 +25,7 @@ import { emitChainChanged } from './events';
 import { RpcError, userRejection } from '../lib/rpc-error';
 import { validateSigner, validateRpcUrl, parseAddChainParams, parseTxParams } from '../lib/rpc-validation';
 import { bufferGas } from '../lib/gas';
+import { simulateTenderlyTx, type TenderlySimulationPreview } from './tenderly-simulation';
 
 // --- Rate limiting for eth_requestAccounts ---
 let lastUnlockPromptTime = 0;
@@ -192,6 +193,7 @@ async function checkWhitelistOrConfirm(
   ctx: { to: string | null; data: string | null; value: string; gasLimit: string | null; chainId: number },
   signerAddress: string,
   ledger?: LedgerConfirmContext,
+  simulation?: TenderlySimulationPreview,
 ): Promise<{
   autoSignResult: whitelist.AutoSignCheckResult;
   feeOverride: FeeOverride | null;
@@ -222,6 +224,7 @@ async function checkWhitelistOrConfirm(
     signerAddress,
     chainId: ctx.chainId,
     ledger,
+    simulation,
   });
   if (!approved) {
     throw userRejection('User rejected the request');
@@ -345,6 +348,17 @@ async function handleSendTransaction(params: unknown[], origin: string): Promise
     };
   }
 
+  const simulation = await simulateTenderlyTx({
+    chainId,
+    from: signerAddress,
+    to: parsed.to,
+    input: parsed.data,
+    value: parsed.valueBigInt,
+    gas: finalGas,
+    gasPrice: txGasPrice ?? txMaxFee,
+    nativeSymbol: network.symbol,
+  });
+
   const { autoSignResult, feeOverride, signedRawTx } = await checkWhitelistOrConfirm(
     'eth_sendTransaction',
     origin,
@@ -358,6 +372,7 @@ async function handleSendTransaction(params: unknown[], origin: string): Promise
     },
     signerAddress,
     ledgerCtx,
+    simulation,
   );
 
   let hash: `0x${string}`;

@@ -25,6 +25,9 @@ jobs:
         run: bun install --frozen-lockfile
 
       - name: Build extension
+        env:
+          TENDERLY_ACCESS_TOKEN: ${{ secrets.TENDERLY_ACCESS_TOKEN }}
+          TENDERLY_API_URL: ${{ secrets.TENDERLY_API_URL }}
         run: bun run build
 
       - name: Package zip

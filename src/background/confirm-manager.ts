@@ -4,6 +4,7 @@ import { MSG_SOURCE, genId } from '../types/messages';
 import { addRule } from '../lib/whitelist';
 import type { WhitelistRule } from '../types/whitelist';
 import { createPopupWindow } from './window-utils';
+import type { TenderlySimulationPreview } from './tenderly-simulation';
 
 export interface FeeOverride {
   type: 'eip1559' | 'legacy';
@@ -64,6 +65,7 @@ export interface ConfirmRequest {
   signerAddress?: string;
   chainId?: number;
   ledger?: LedgerConfirmContext;
+  simulation?: TenderlySimulationPreview;
 }
 
 /** Open a confirmation popup and wait for user to approve or reject. */
