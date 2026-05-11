@@ -9,7 +9,8 @@ import { TxLogPage } from './pages/TxLogPage';
 import { SettingsPage } from './pages/SettingsPage';
 import { AddressBookPage } from './pages/AddressBookPage';
 import { AccountMenu } from './pages/AccountMenu';
-import { LedgerBadge } from './LedgerBadge';
+import { AccountBadge } from './AccountBadge';
+import type { AccountSource } from '../lib/key-manager.core';
 
 type Page = 'loading' | 'setup' | 'unlock' | 'account' | 'whitelist' | 'addressBook' | 'networks' | 'txlog' | 'settings';
 
@@ -18,6 +19,7 @@ interface AccountInfo {
   label: string;
   address: string;
   type: 'private' | 'ledger';
+  source: AccountSource;
   derivationPath?: string;
 }
 
@@ -96,7 +98,7 @@ export default function App() {
               <button onClick={() => setShowAccountMenu(!showAccountMenu)} className="account-trigger">
                 <span className="account-trigger-dot" />
                 <span className="account-trigger-label">
-                  {activeAccount?.type === 'ledger' && <LedgerBadge title="Ledger hardware wallet" />}
+                  {activeAccount && <AccountBadge source={activeAccount.source} />}
                   {activeAccount?.label ?? 'Account'}
                 </span>
                 <span className="account-trigger-addr">{shortAddr}</span>

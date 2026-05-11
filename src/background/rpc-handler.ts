@@ -27,6 +27,7 @@ import { validateSigner, validateRpcUrl, parseAddChainParams, parseTxParams } fr
 import { bufferGas } from '../lib/gas';
 import { simulateTenderlyTx, type TenderlySimulationPreview } from './tenderly-simulation';
 import { preparePersonalSignParams, signPreparedPersonalMessage } from '../lib/signing';
+import { retryWithNextNonce } from '../lib/nonce';
 
 // --- Rate limiting for eth_requestAccounts ---
 let lastUnlockPromptTime = 0;
@@ -415,20 +416,28 @@ async function handleSendTransaction(params: unknown[], origin: string): Promise
 
     const client = await networkManager.getWalletClient(account);
     const chain = networkManager.buildViemChain(network);
-    const txArgs: any = {
-      to: parsed.to as `0x${string}`,
-      value: parsed.valueBigInt,
-      data: (effectiveData as `0x${string}`) ?? undefined,
-      gas: effGas,
-      chain,
-    };
-    if (effMaxFee !== null) {
-      txArgs.maxFeePerGas = effMaxFee;
-      if (effPriority !== null) txArgs.maxPriorityFeePerGas = effPriority;
-    } else if (effGasPrice !== null) {
-      txArgs.gasPrice = effGasPrice;
-    }
-    hash = await client.sendTransaction(txArgs);
+    const requestedNonce = tx.nonce ? Number(hexToBigInt(tx.nonce as `0x${string}`)) : null;
+    hash = await retryWithNextNonce(async (nonceOverride) => {
+      const nonce = requestedNonce ?? nonceOverride ?? await publicClient.getTransactionCount({
+        address: account.address,
+        blockTag: 'pending',
+      });
+      const txArgs: any = {
+        to: parsed.to as `0x${string}`,
+        value: parsed.valueBigInt,
+        data: (effectiveData as `0x${string}`) ?? undefined,
+        gas: effGas,
+        nonce,
+        chain,
+      };
+      if (effMaxFee !== null) {
+        txArgs.maxFeePerGas = effMaxFee;
+        if (effPriority !== null) txArgs.maxPriorityFeePerGas = effPriority;
+      } else if (effGasPrice !== null) {
+        txArgs.gasPrice = effGasPrice;
+      }
+      return client.sendTransaction(txArgs);
+    });
   }
 
   // Log the transaction (capture the requested fee values so we can compare to actual)

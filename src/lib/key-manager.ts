@@ -14,6 +14,7 @@ import {
   toAccountInfo,
   isLedger,
   PASSWORD_VERIFIER_PLAINTEXT,
+  type AccountSource,
   type StoredAccount,
   type AccountInfo,
   type SessionData,
@@ -168,12 +169,14 @@ async function appendPrivateAndActivate(
   account: PrivateKeyAccount,
   label: string,
   pw: string,
+  source: AccountSource,
 ): Promise<string> {
   const encrypted = await encrypt(secret, pw);
   const id = crypto.randomUUID();
   const stored: StoredAccount = {
     id, label, encrypted,
     type: 'private',
+    source,
     address: account.address,
     createdAt: Date.now(),
   };
@@ -275,17 +278,17 @@ export async function switchAccount(accountId: string): Promise<string> {
 export async function createWallet(password: string, label?: string): Promise<string> {
   const privateKey = generatePrivateKey();
   const account = decryptToAccount(privateKey);
-  return appendPrivateAndActivate(privateKey, account, label ?? await getNextLabel(), password);
+  return appendPrivateAndActivate(privateKey, account, label ?? await getNextLabel(), password, 'privateKey');
 }
 
 export async function importPrivateKey(privateKey: `0x${string}`, password: string, label?: string): Promise<string> {
   const account = decryptToAccount(privateKey);
-  return appendPrivateAndActivate(privateKey, account, label ?? await getNextLabel(), password);
+  return appendPrivateAndActivate(privateKey, account, label ?? await getNextLabel(), password, 'privateKey');
 }
 
 export async function importMnemonic(mnemonic: string, password: string, label?: string): Promise<string> {
   const account = decryptToAccount(mnemonic);
-  return appendPrivateAndActivate(mnemonic, account, label ?? await getNextLabel(), password);
+  return appendPrivateAndActivate(mnemonic, account, label ?? await getNextLabel(), password, 'mnemonic');
 }
 
 export interface LedgerAccountSeed {
@@ -334,19 +337,19 @@ export async function addAccountGenerate(label?: string): Promise<string> {
   const pw = await ensureMasterPassword();
   const privateKey = generatePrivateKey();
   const account = decryptToAccount(privateKey);
-  return appendPrivateAndActivate(privateKey, account, label ?? await getNextLabel(), pw);
+  return appendPrivateAndActivate(privateKey, account, label ?? await getNextLabel(), pw, 'privateKey');
 }
 
 export async function addAccountPrivateKey(privateKey: `0x${string}`, label?: string): Promise<string> {
   const pw = await ensureMasterPassword();
   const account = decryptToAccount(privateKey);
-  return appendPrivateAndActivate(privateKey, account, label ?? await getNextLabel(), pw);
+  return appendPrivateAndActivate(privateKey, account, label ?? await getNextLabel(), pw, 'privateKey');
 }
 
 export async function addAccountMnemonic(mnemonic: string, label?: string): Promise<string> {
   const pw = await ensureMasterPassword();
   const account = decryptToAccount(mnemonic);
-  return appendPrivateAndActivate(mnemonic, account, label ?? await getNextLabel(), pw);
+  return appendPrivateAndActivate(mnemonic, account, label ?? await getNextLabel(), pw, 'mnemonic');
 }
 
 /** Append one or more Ledger accounts to an existing wallet. Returns the address of the first added account. */
@@ -397,6 +400,7 @@ export async function unlock(password: string): Promise<string> {
     const stored: StoredAccount = {
       id, label: 'Account 1', encrypted: legacy,
       type: 'private',
+      source: plaintext.startsWith('0x') ? 'privateKey' : 'mnemonic',
       address: account.address, createdAt: Date.now(),
     };
     await saveStoredAccounts([stored]);

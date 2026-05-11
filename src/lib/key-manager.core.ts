@@ -7,6 +7,7 @@ import type { EncryptedData } from './crypto';
 // --- Types (shared with key-manager.ts IO layer) ---
 
 export type AccountType = 'private' | 'ledger';
+export type AccountSource = 'privateKey' | 'mnemonic' | 'ledger';
 
 export interface StoredAccount {
   id: string;
@@ -15,6 +16,7 @@ export interface StoredAccount {
   createdAt: number;
   // Optional fields — undefined `type` means legacy 'private'.
   type?: AccountType;
+  source?: AccountSource;
   encrypted?: EncryptedData; // present for type === 'private'
   derivationPath?: string;   // present for type === 'ledger'
 }
@@ -24,6 +26,7 @@ export interface AccountInfo {
   label: string;
   address: string;
   type: AccountType;
+  source: AccountSource;
   derivationPath?: string;
 }
 
@@ -42,6 +45,11 @@ export const PASSWORD_VERIFIER_PLAINTEXT = 'auto-wallet-verifier-v1';
 /** Default account type for stored accounts that predate the `type` field. */
 export function accountType(stored: StoredAccount): AccountType {
   return stored.type ?? 'private';
+}
+
+export function accountSource(stored: StoredAccount): AccountSource {
+  if (accountType(stored) === 'ledger') return 'ledger';
+  return stored.source ?? 'privateKey';
 }
 
 export function isLedger(stored: StoredAccount): boolean {
@@ -102,6 +110,7 @@ export function toAccountInfo(stored: StoredAccount): AccountInfo {
     label: stored.label,
     address: stored.address,
     type: accountType(stored),
+    source: accountSource(stored),
     derivationPath: stored.derivationPath,
   };
 }

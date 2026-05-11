@@ -1,13 +1,15 @@
 import React, { useState, useEffect } from 'react';
 import { callBackground } from '../api';
 import { LedgerPicker } from '../LedgerPicker';
-import { LedgerBadge } from '../LedgerBadge';
+import { AccountBadge } from '../AccountBadge';
+import type { AccountSource } from '../../lib/key-manager.core';
 
 interface AccountInfo {
   id: string;
   label: string;
   address: string;
   type: 'private' | 'ledger';
+  source: AccountSource;
   derivationPath?: string;
 }
 
@@ -121,7 +123,7 @@ export function AccountMenu({ onSwitch, onClose }: { onSwitch: () => void; onClo
               <>
                 <button className="account-menu-item-main" onClick={() => switchTo(a.id)}>
                   <span className="account-menu-item-label">
-                    {a.type === 'ledger' && <LedgerBadge title="Ledger hardware wallet" />}
+                    <AccountBadge source={a.source} />
                     {a.label}
                   </span>
                   <span className="account-menu-item-addr mono">

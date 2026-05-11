@@ -406,9 +406,16 @@ input[type="checkbox"]:checked::after {
   color: var(--accent);
   box-shadow: var(--shadow-sm);
 }
+.action-btn:disabled {
+  opacity: .7;
+  cursor: wait;
+}
 .action-btn-icon {
   font-size: 18px;
   line-height: 1;
+}
+.action-btn.is-loading .refresh-icon {
+  animation: spin .7s linear infinite;
 }
 
 .address-chip {
@@ -435,6 +442,13 @@ input[type="checkbox"]:checked::after {
   transition: stroke .12s ease;
 }
 .address-chip:hover .copy-icon { stroke: var(--accent); }
+.nonce-meta {
+  margin-top: 6px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--text-muted);
+  opacity: .72;
+}
 
 .settings-icon-btn {
   width: 34px;
@@ -1013,6 +1027,9 @@ body:has(.confirm-shell) {
   font-size: 11px;
   font-weight: 600;
   color: var(--text-primary);
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -1076,6 +1093,9 @@ body:has(.confirm-shell) {
   font-size: 12px;
   font-weight: 500;
   color: var(--text-primary);
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
 }
 .account-menu-item.active .account-menu-item-label { color: var(--accent); }
 .account-menu-item-addr {
@@ -1154,6 +1174,34 @@ body:has(.confirm-shell) {
   vertical-align: -3px;
 }
 .ledger-badge svg { display: block; }
+.account-type-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  margin-right: 4px;
+  border-radius: 4px;
+  flex-shrink: 0;
+  vertical-align: -3px;
+}
+.account-type-badge.private-key {
+  background: rgba(79,70,229,.1);
+  color: var(--accent);
+}
+.account-type-badge.mnemonic {
+  background: rgba(16,185,129,.12);
+  color: #047857;
+}
+.account-type-badge svg { display: block; }
+.account-trigger-label .ledger-badge,
+.account-trigger-label .account-type-badge,
+.account-menu-item-label .ledger-badge,
+.account-menu-item-label .account-type-badge,
+.address-chip .ledger-badge,
+.address-chip .account-type-badge {
+  margin-right: 0;
+}
 
 /* --- Ledger Address Picker Row --- */
 .ledger-row {

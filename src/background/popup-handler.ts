@@ -18,6 +18,7 @@ import { emitAccountsChanged, emitChainChanged } from './events';
 import { toHex } from 'viem';
 import { bufferGas } from '../lib/gas';
 import { notifyTx } from '../lib/notify';
+import { retryWithNextNonce } from '../lib/nonce';
 
 /** Handle actions from the Popup UI. */
 export async function handlePopupAction(action: string, payload: any): Promise<unknown> {
@@ -107,6 +108,21 @@ export async function handlePopupAction(action: string, payload: any): Promise<u
       const balance = await client.getBalance({ address: address as `0x${string}` });
       return formatEther(balance);
     }
+    case 'getAccountNonces': {
+      const address = await keyManager.getAddress();
+      const client = await getClient();
+      const [latest, pending] = await Promise.all([
+        client.getTransactionCount({
+          address: address as `0x${string}`,
+          blockTag: 'latest',
+        }),
+        client.getTransactionCount({
+          address: address as `0x${string}`,
+          blockTag: 'pending',
+        }),
+      ]);
+      return { latest, pending };
+    }
 
     // --- Send native token ---
     case 'sendNative': {
@@ -122,13 +138,20 @@ export async function handlePopupAction(action: string, payload: any): Promise<u
         fee.txArgs.gas,
         { from: account.address, to: payload.to, value },
       );
-      const hash = await client.sendTransaction({
-        to: payload.to as `0x${string}`,
-        value,
-        chain,
-        ...fee.txArgs,
-        gas: finalGas,
-      } as any);
+      const hash = await retryWithNextNonce(async (nonceOverride) => {
+        const nonce = nonceOverride ?? await publicClient.getTransactionCount({
+          address: account.address,
+          blockTag: 'pending',
+        });
+        return client.sendTransaction({
+          to: payload.to as `0x${string}`,
+          value,
+          chain,
+          ...fee.txArgs,
+          gas: finalGas,
+          nonce,
+        } as any);
+      });
       const logId = genId();
       await txLogger.appendLog({
         id: logId,
@@ -167,14 +190,21 @@ export async function handlePopupAction(action: string, payload: any): Promise<u
         fee.txArgs.gas,
         { from: account.address, to: payload.tokenAddress, data, value: 0n },
       );
-      const hash = await client.sendTransaction({
-        to: payload.tokenAddress as `0x${string}`,
-        data,
-        value: 0n,
-        chain,
-        ...fee.txArgs,
-        gas: finalGas,
-      } as any);
+      const hash = await retryWithNextNonce(async (nonceOverride) => {
+        const nonce = nonceOverride ?? await publicClient.getTransactionCount({
+          address: account.address,
+          blockTag: 'pending',
+        });
+        return client.sendTransaction({
+          to: payload.tokenAddress as `0x${string}`,
+          data,
+          value: 0n,
+          chain,
+          ...fee.txArgs,
+          gas: finalGas,
+          nonce,
+        } as any);
+      });
       const logId = genId();
       await txLogger.appendLog({
         id: logId,

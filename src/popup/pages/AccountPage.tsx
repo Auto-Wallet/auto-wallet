@@ -3,11 +3,13 @@ import { callBackground } from '../api';
 import type { Network } from '../../types/network';
 import type { Token } from '../../types/token';
 import type { AddressBookEntry } from '../../types/address-book';
+import type { WalletSettings } from '../../types/settings';
 import { encodeFunctionData, erc20Abi, parseEther, parseUnits, toHex } from 'viem';
 import { FeeEditor, type FeeOverride, type FeeEditorRequest } from '../FeeEditor';
-import { LedgerBadge } from '../LedgerBadge';
+import { AccountBadge } from '../AccountBadge';
 import { signLedgerSendTx } from '../ledger-signer';
 import { matchAddressBookEntries, resolveAddressBookInput } from '../../lib/address-book.core';
+import type { AccountSource } from '../../lib/key-manager.core';
 
 type SendTarget = {
   type: 'native';
@@ -134,16 +136,25 @@ interface ActiveInfo {
   label: string;
   address: string;
   type: 'private' | 'ledger';
+  source: AccountSource;
   derivationPath?: string;
+}
+
+interface AccountNonces {
+  latest: number;
+  pending: number;
 }
 
 export function AccountPage({ onLock }: { onLock: () => void }) {
   const [address, setAddress] = useState('');
   const [balance, setBalance] = useState('');
+  const [nonces, setNonces] = useState<AccountNonces | null>(null);
+  const [showWalletNonce, setShowWalletNonce] = useState(false);
   const [network, setNetwork] = useState<Network | null>(null);
   const [tokens, setTokens] = useState<{ token: Token; balance: string }[]>([]);
   const [addressBook, setAddressBook] = useState<AddressBookEntry[]>([]);
   const [accounts, setAccounts] = useState<ActiveInfo[]>([]);
+  const [refreshing, setRefreshing] = useState(false);
   const [copied, setCopied] = useState(false);
   const [active, setActive] = useState<ActiveInfo | null>(null);
 
@@ -169,18 +180,26 @@ export function AccountPage({ onLock }: { onLock: () => void }) {
   useEffect(() => { loadData(); }, []);
 
   async function loadData() {
-    const [info, net, accountList] = await Promise.all([
+    const [info, net, accountList, settings] = await Promise.all([
       callBackground<ActiveInfo>('getActiveAccountInfo'),
       callBackground<Network>('getActiveNetwork'),
       callBackground<ActiveInfo[]>('listAccounts'),
+      callBackground<WalletSettings>('getSettings'),
     ]);
     setActive(info);
     setAddress(info.address);
     setNetwork(net);
     setAccounts(accountList);
+    setShowWalletNonce(settings.showWalletNonce);
 
-    const bal = await callBackground<string>('getNativeBalance');
+    const [bal, accountNonces] = await Promise.all([
+      callBackground<string>('getNativeBalance'),
+      settings.showWalletNonce
+        ? callBackground<AccountNonces>('getAccountNonces')
+        : Promise.resolve(null),
+    ]);
     setBalance(bal);
+    setNonces(accountNonces);
 
     const allTokens = await callBackground<Token[]>('getTokens');
     const chainTokens = allTokens.filter((t) => t.chainId === net.chainId);
@@ -198,6 +217,15 @@ export function AccountPage({ onLock }: { onLock: () => void }) {
 
     const entries = await callBackground<AddressBookEntry[]>('getAddressBook');
     setAddressBook(entries);
+  }
+
+  async function refreshData() {
+    setRefreshing(true);
+    try {
+      await loadData();
+    } finally {
+      setRefreshing(false);
+    }
   }
 
   const copyAddress = async () => {
@@ -379,7 +407,7 @@ export function AccountPage({ onLock }: { onLock: () => void }) {
       {/* Address */}
       <div className="text-center">
         <button onClick={copyAddress} className="address-chip">
-          {active?.type === 'ledger' && <LedgerBadge title="Ledger hardware wallet" />}
+          {active && <AccountBadge source={active.source} size={11} />}
           {short}
           {copied ? (
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--success)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -391,6 +419,11 @@ export function AccountPage({ onLock }: { onLock: () => void }) {
             </svg>
           )}
         </button>
+        {showWalletNonce && nonces && (
+          <div className="nonce-meta">
+            nonce {nonces.latest} · pending {nonces.pending}
+          </div>
+        )}
       </div>
 
       {/* Balance */}
@@ -405,9 +438,9 @@ export function AccountPage({ onLock }: { onLock: () => void }) {
           <span className="action-btn-icon">&#8593;</span>
           Send
         </button>
-        <button onClick={loadData} className="action-btn">
-          <span className="action-btn-icon">&#8635;</span>
-          Refresh
+        <button onClick={refreshData} className={`action-btn ${refreshing ? 'is-loading' : ''}`} disabled={refreshing}>
+          <span className="action-btn-icon refresh-icon">&#8635;</span>
+          {refreshing ? 'Refreshing' : 'Refresh'}
         </button>
       </div>
 

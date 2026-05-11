@@ -1,9 +1,9 @@
 {
   "manifest_version": 3,
   "name": "Auto Wallet",
-  "version": "0.6.2",
+  "version": "0.7.0",
   "description": "Minimal auto-signing wallet for EVM chains",
-  "permissions": ["storage", "windows", "notifications", "hid"],
+  "permissions": ["storage", "windows", "notifications"],
   "host_permissions": ["https://api.tenderly.co/*"],
   "background": {
     "service_worker": "background.js",

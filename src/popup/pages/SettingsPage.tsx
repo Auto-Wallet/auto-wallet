@@ -1,12 +1,14 @@
 import React, { useState, useEffect } from 'react';
 import { callBackground } from '../api';
 import type { WalletSettings } from '../../types/settings';
+import type { AccountSource } from '../../lib/key-manager.core';
 
 interface AccountInfo {
   id: string;
   label: string;
   address: string;
   type: 'private' | 'ledger';
+  source: AccountSource;
   derivationPath?: string;
 }
 
@@ -201,6 +203,26 @@ export function SettingsPage() {
             )}
           </div>
         )}
+      </div>
+
+      {/* Provider */}
+      <div className="card">
+        <p className="section-label" style={{ marginBottom: 10 }}>Wallet Display</p>
+
+        <div className="settings-row">
+          <div style={{ flex: 1 }}>
+            <p style={{ fontSize: 12, fontWeight: 500, color: 'var(--text-primary)' }}>Show nonce</p>
+            <p style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>
+              Display latest and pending nonce on the Wallet page
+            </p>
+          </div>
+          <button
+            onClick={() => updateSetting({ showWalletNonce: !settings.showWalletNonce })}
+            className={`toggle ${settings.showWalletNonce ? 'on' : ''}`}
+          >
+            <span className="toggle-knob" />
+          </button>
+        </div>
       </div>
 
       {/* Provider */}

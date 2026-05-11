@@ -190,6 +190,7 @@ describe('toAccountInfo', () => {
       label: 'My Wallet',
       address: '0xABCD',
       type: 'private',
+      source: 'privateKey',
       derivationPath: undefined,
     });
     expect((info as any).encrypted).toBeUndefined();
@@ -211,7 +212,13 @@ describe('toAccountInfo', () => {
       label: 'Ledger 1',
       address: '0xDEAD',
       type: 'ledger',
+      source: 'ledger',
       derivationPath: "44'/60'/0'/0/0",
     });
+  });
+
+  test('marks mnemonic private accounts', () => {
+    const info = toAccountInfo(makeAccount({ source: 'mnemonic' }));
+    expect(info.source).toBe('mnemonic');
   });
 });
