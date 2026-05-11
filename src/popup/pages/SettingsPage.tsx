@@ -2,7 +2,13 @@ import React, { useState, useEffect } from 'react';
 import { callBackground } from '../api';
 import type { WalletSettings } from '../../types/settings';
 
-interface AccountInfo { id: string; label: string; address: string; }
+interface AccountInfo {
+  id: string;
+  label: string;
+  address: string;
+  type: 'private' | 'ledger';
+  derivationPath?: string;
+}
 
 const LOCK_OPTIONS = [
   { value: 0, label: 'Never' },
@@ -83,6 +89,7 @@ export function SettingsPage() {
   }
 
   const exportAccount = accounts.find((a) => a.id === exportAccountId);
+  const exportableAccounts = accounts.filter((a) => a.type === 'private');
 
   return (
     <div className="stack stack-md animate-in">
@@ -120,18 +127,24 @@ export function SettingsPage() {
             <p style={{ fontSize: 12, color: 'var(--text-secondary)', marginBottom: 4 }}>
               Select an account to export
             </p>
-            {accounts.map((a) => (
-              <button
-                key={a.id}
-                onClick={() => setExportAccountId(a.id)}
-                className="export-account-btn"
-              >
-                <span style={{ fontWeight: 500 }}>{a.label}</span>
-                <span className="mono" style={{ fontSize: 10, color: 'var(--text-muted)' }}>
-                  {a.address.slice(0, 8)}...{a.address.slice(-6)}
-                </span>
-              </button>
-            ))}
+            {exportableAccounts.length === 0 ? (
+              <p style={{ fontSize: 12, color: 'var(--text-muted)' }}>
+                No private-key accounts available.
+              </p>
+            ) : (
+              exportableAccounts.map((a) => (
+                <button
+                  key={a.id}
+                  onClick={() => setExportAccountId(a.id)}
+                  className="export-account-btn"
+                >
+                  <span style={{ fontWeight: 500 }}>{a.label}</span>
+                  <span className="mono" style={{ fontSize: 10, color: 'var(--text-muted)' }}>
+                    {a.address.slice(0, 8)}...{a.address.slice(-6)}
+                  </span>
+                </button>
+              ))
+            )}
           </div>
         ) : !exportedKey ? (
           /* Password verification */

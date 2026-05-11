@@ -95,6 +95,8 @@ body {
 .header-row-account {
   display: flex;
   align-items: center;
+  justify-content: space-between;
+  gap: 8px;
   padding: 8px 12px;
 }
 
@@ -182,6 +184,10 @@ body {
   text-transform: uppercase;
   letter-spacing: .1em;
   color: var(--text-muted);
+}
+.page-title-icon {
+  display: inline-flex;
+  color: var(--accent);
 }
 .mono { font-family: var(--font-mono); }
 .truncate { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -430,6 +436,27 @@ input[type="checkbox"]:checked::after {
 }
 .address-chip:hover .copy-icon { stroke: var(--accent); }
 
+.settings-icon-btn {
+  width: 34px;
+  height: 34px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  color: var(--text-muted);
+  background: var(--bg-input);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: all .12s ease;
+}
+.settings-icon-btn:hover,
+.settings-icon-btn.active {
+  color: var(--accent);
+  background: var(--accent-subtle);
+  border-color: rgba(79,70,229,.15);
+}
+
 /* Token card (bigger, with icon) */
 .token-card {
   display: flex;
@@ -461,6 +488,75 @@ input[type="checkbox"]:checked::after {
 .token-card-actions {
   flex-shrink: 0;
   margin-left: 8px;
+}
+
+/* Address book */
+.recipient-field {
+  position: relative;
+}
+.address-suggestions {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: calc(100% + 4px);
+  z-index: 20;
+  background: var(--bg-card);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow-md);
+  overflow: hidden;
+}
+.address-suggestion {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 9px 10px;
+  background: var(--bg-card);
+  border: none;
+  border-bottom: 1px solid var(--border-subtle);
+  cursor: pointer;
+  text-align: left;
+}
+.address-suggestion:last-child { border-bottom: none; }
+.address-suggestion:hover { background: var(--bg-card-hover); }
+.address-suggestion-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--font-sans);
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+.address-suggestion-address {
+  flex-shrink: 0;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--text-muted);
+}
+.address-book-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 10px 12px;
+  background: var(--bg-card);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-xs);
+}
+.address-book-name {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+  max-width: 180px;
+}
+.address-book-address {
+  font-size: 10px;
+  color: var(--text-muted);
 }
 
 /* Token icon */
@@ -797,13 +893,14 @@ body:has(.confirm-shell) {
   display: flex;
   align-items: center;
   gap: 6px;
+  min-width: 0;
   background: var(--bg-input);
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-pill);
   padding: 4px 10px 4px 8px;
   cursor: pointer;
   transition: all .1s ease;
-  max-width: 180px;
+  max-width: 280px;
 }
 .account-trigger:hover { border-color: var(--border-default); background: var(--bg-card-hover); }
 .account-trigger-dot {

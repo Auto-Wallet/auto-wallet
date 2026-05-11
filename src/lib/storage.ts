@@ -25,6 +25,7 @@ export const STORAGE_KEYS = {
   ACTIVE_CHAIN_ID: 'active_chain_id',
   WHITELIST_RULES: 'whitelist_rules',
   TOKENS: 'tokens',
+  ADDRESS_BOOK: 'address_book',
   TX_LOG: 'tx_log',
   SETTINGS: 'settings',
 } as const;

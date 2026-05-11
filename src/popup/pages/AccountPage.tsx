@@ -2,10 +2,12 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { callBackground } from '../api';
 import type { Network } from '../../types/network';
 import type { Token } from '../../types/token';
+import type { AddressBookEntry } from '../../types/address-book';
 import { encodeFunctionData, erc20Abi, parseEther, parseUnits, toHex } from 'viem';
 import { FeeEditor, type FeeOverride, type FeeEditorRequest } from '../FeeEditor';
 import { LedgerBadge } from '../LedgerBadge';
 import { signLedgerSendTx } from '../ledger-signer';
+import { matchAddressBookEntries, resolveAddressBookInput } from '../../lib/address-book.core';
 
 type SendTarget = {
   type: 'native';
@@ -140,6 +142,7 @@ export function AccountPage({ onLock }: { onLock: () => void }) {
   const [balance, setBalance] = useState('');
   const [network, setNetwork] = useState<Network | null>(null);
   const [tokens, setTokens] = useState<{ token: Token; balance: string }[]>([]);
+  const [addressBook, setAddressBook] = useState<AddressBookEntry[]>([]);
   const [copied, setCopied] = useState(false);
   const [active, setActive] = useState<ActiveInfo | null>(null);
 
@@ -151,6 +154,7 @@ export function AccountPage({ onLock }: { onLock: () => void }) {
   const [sendError, setSendError] = useState('');
   const [sendSuccess, setSendSuccess] = useState('');
   const [sendFee, setSendFee] = useState<FeeOverride | null>(null);
+  const [selectedAddressBookId, setSelectedAddressBookId] = useState<string | null>(null);
 
   // Add token
   const [showAddToken, setShowAddToken] = useState(false);
@@ -188,6 +192,9 @@ export function AccountPage({ onLock }: { onLock: () => void }) {
       }),
     );
     setTokens(withBalances);
+
+    const entries = await callBackground<AddressBookEntry[]>('getAddressBook');
+    setAddressBook(entries);
   }
 
   const copyAddress = async () => {
@@ -198,22 +205,43 @@ export function AccountPage({ onLock }: { onLock: () => void }) {
 
   function openSendNative() {
     setSendTarget({ type: 'native', symbol: network?.symbol ?? 'ETH', balance });
-    setSendTo(''); setSendAmount(''); setSendError(''); setSendSuccess(''); setSendFee(null);
+    setSendTo(''); setSendAmount(''); setSendError(''); setSendSuccess(''); setSendFee(null); setSelectedAddressBookId(null);
   }
 
   function openSendToken(token: Token, tokenBalance: string) {
     setSendTarget({ type: 'token', token, balance: tokenBalance });
-    setSendTo(''); setSendAmount(''); setSendError(''); setSendSuccess(''); setSendFee(null);
+    setSendTo(''); setSendAmount(''); setSendError(''); setSendSuccess(''); setSendFee(null); setSelectedAddressBookId(null);
   }
 
   function closeSend() {
     setSendTarget(null); setSendTo(''); setSendAmount('');
-    setSendError(''); setSendSuccess(''); setSendFee(null);
+    setSendError(''); setSendSuccess(''); setSendFee(null); setSelectedAddressBookId(null);
+  }
+
+  const sendMatches = useMemo(
+    () => matchAddressBookEntries(addressBook, sendTo).slice(0, 5),
+    [addressBook, sendTo],
+  );
+
+  const resolvedSendTo = useMemo(
+    () => resolveAddressBookInput(addressBook, sendTo),
+    [addressBook, sendTo],
+  );
+
+  function selectAddressBookEntry(entry: AddressBookEntry) {
+    setSendTo(entry.address);
+    setSelectedAddressBookId(entry.id);
+    setSendError('');
   }
 
   async function handleSend() {
     if (!sendTarget) return;
-    if (!sendTo.trim().startsWith('0x') || sendTo.trim().length !== 42) { setSendError('Invalid address'); return; }
+    const toAddress = resolvedSendTo;
+    if (!toAddress) {
+      const matches = matchAddressBookEntries(addressBook, sendTo);
+      setSendError(matches.length > 1 ? 'Multiple address book matches. Pick one.' : 'Invalid address');
+      return;
+    }
     const amount = parseFloat(sendAmount);
     if (!sendAmount.trim() || isNaN(amount) || amount <= 0) { setSendError('Invalid amount'); return; }
     setSending(true); setSendError(''); setSendSuccess('');
@@ -224,21 +252,21 @@ export function AccountPage({ onLock }: { onLock: () => void }) {
         if (isLedger) {
           hash = await signLedgerSendTx({
             kind: 'native',
-            to: sendTo.trim(),
+            to: toAddress,
             amount: sendAmount.trim(),
             fee: sendFee,
             derivationPath: active!.derivationPath!,
           });
         } else {
           hash = await callBackground<string>('sendNative', {
-            to: sendTo.trim(), amount: sendAmount.trim(), fee: sendFee,
+            to: toAddress, amount: sendAmount.trim(), fee: sendFee,
           });
         }
       } else {
         if (isLedger) {
           hash = await signLedgerSendTx({
             kind: 'token',
-            to: sendTo.trim(),
+            to: toAddress,
             amount: sendAmount.trim(),
             tokenAddress: sendTarget.token.address,
             decimals: sendTarget.token.decimals,
@@ -247,7 +275,7 @@ export function AccountPage({ onLock }: { onLock: () => void }) {
           });
         } else {
           hash = await callBackground<string>('sendToken', {
-            to: sendTo.trim(),
+            to: toAddress,
             amount: sendAmount.trim(),
             tokenAddress: sendTarget.token.address,
             decimals: sendTarget.token.decimals,
@@ -256,7 +284,7 @@ export function AccountPage({ onLock }: { onLock: () => void }) {
         }
       }
       setSendSuccess(hash);
-      setSendTo(''); setSendAmount('');
+      setSendTo(''); setSendAmount(''); setSelectedAddressBookId(null);
       setTimeout(loadData, 2000);
     } catch (e: any) { setSendError(e.message); }
     setSending(false);
@@ -267,8 +295,7 @@ export function AccountPage({ onLock }: { onLock: () => void }) {
   // (just without a gas estimate).
   const feeRequest = useMemo<FeeEditorRequest | null>(() => {
     if (!sendTarget || !address) return null;
-    const toRaw = sendTo.trim();
-    const looksLikeAddr = toRaw.startsWith('0x') && toRaw.length === 42;
+    const toAddress = resolvedSendTo;
 
     if (sendTarget.type === 'native') {
       let valueHex: string | undefined;
@@ -277,20 +304,20 @@ export function AccountPage({ onLock }: { onLock: () => void }) {
       } catch { /* leave undefined */ }
       return {
         from: address,
-        to: looksLikeAddr ? toRaw : undefined,
+        to: toAddress ?? undefined,
         value: valueHex,
       };
     }
 
     // Token transfer: encode transfer(to, amount) so the gas estimate is realistic
     let data: string | undefined;
-    if (looksLikeAddr && sendAmount.trim()) {
+    if (toAddress && sendAmount.trim()) {
       try {
         const amt = parseUnits(sendAmount.trim(), sendTarget.token.decimals);
         data = encodeFunctionData({
           abi: erc20Abi,
           functionName: 'transfer',
-          args: [toRaw as `0x${string}`, amt],
+          args: [toAddress as `0x${string}`, amt],
         });
       } catch { /* leave undefined */ }
     }
@@ -299,7 +326,7 @@ export function AccountPage({ onLock }: { onLock: () => void }) {
       to: sendTarget.token.address,
       data,
     };
-  }, [sendTarget, sendTo, sendAmount, address]);
+  }, [sendTarget, sendTo, sendAmount, address, resolvedSendTo]);
 
   async function handleAddToken() {
     if (!tokenAddress.trim() || !network) return;
@@ -377,8 +404,32 @@ export function AccountPage({ onLock }: { onLock: () => void }) {
               <span className="badge badge-network" style={{ fontSize: 9 }}>{sendTarget.token.symbol}</span>
             )}
           </div>
-          <input className="input-field" placeholder="Recipient address (0x...)"
-            value={sendTo} onChange={(e) => setSendTo(e.target.value)} />
+          <div className="recipient-field">
+            <input className="input-field" placeholder="Recipient address, name, or prefix"
+              value={sendTo}
+              onChange={(e) => {
+                setSendTo(e.target.value);
+                setSelectedAddressBookId(null);
+              }}
+            />
+            {sendTo.trim() && sendMatches.length > 0 && selectedAddressBookId === null && (
+              <div className="address-suggestions">
+                {sendMatches.map((entry) => (
+                  <button
+                    key={entry.id}
+                    type="button"
+                    onClick={() => selectAddressBookEntry(entry)}
+                    className="address-suggestion"
+                  >
+                    <span className="address-suggestion-name">{entry.name}</span>
+                    <span className="address-suggestion-address">
+                      {entry.address.slice(0, 10)}...{entry.address.slice(-6)}
+                    </span>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
           <div style={{ position: 'relative' }}>
             <input className="input-field" placeholder={`Amount (${sendSymbol})`} value={sendAmount}
               onChange={(e) => setSendAmount(e.target.value)} type="text" inputMode="decimal"

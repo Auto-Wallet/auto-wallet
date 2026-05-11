@@ -3,6 +3,7 @@ import * as networkManager from '../lib/network-manager';
 import * as whitelist from '../lib/whitelist';
 import * as tokenManager from '../lib/token-manager';
 import * as txLogger from '../lib/tx-logger';
+import * as addressBook from '../lib/address-book';
 import { getClient } from '../lib/network-manager';
 import { getItem, setItem, STORAGE_KEYS } from '../lib/storage';
 import {
@@ -228,6 +229,14 @@ export async function handlePopupAction(action: string, payload: any): Promise<u
       return tokenManager.removeToken(payload.chainId, payload.address);
     case 'getTokenBalance':
       return tokenManager.getTokenBalance(payload.token, await keyManager.getAddress());
+
+    // --- Address book ---
+    case 'getAddressBook':
+      return addressBook.getAddressBook();
+    case 'addAddressBookEntry':
+      return addressBook.addAddressBookEntry(payload.name, payload.address);
+    case 'removeAddressBookEntry':
+      return addressBook.removeAddressBookEntryById(payload.id);
 
     // --- Fee suggestions for the confirm popup ---
     case 'getFeeSuggestions':

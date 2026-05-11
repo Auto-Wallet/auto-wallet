@@ -7,10 +7,11 @@ import { WhitelistPage } from './pages/WhitelistPage';
 import { NetworkPage } from './pages/NetworkPage';
 import { TxLogPage } from './pages/TxLogPage';
 import { SettingsPage } from './pages/SettingsPage';
+import { AddressBookPage } from './pages/AddressBookPage';
 import { AccountMenu } from './pages/AccountMenu';
 import { LedgerBadge } from './LedgerBadge';
 
-type Page = 'loading' | 'setup' | 'unlock' | 'account' | 'whitelist' | 'networks' | 'txlog' | 'settings';
+type Page = 'loading' | 'setup' | 'unlock' | 'account' | 'whitelist' | 'addressBook' | 'networks' | 'txlog' | 'settings';
 
 interface AccountInfo {
   id: string;
@@ -23,10 +24,19 @@ interface AccountInfo {
 const NAV_ITEMS: { page: Page; label: string }[] = [
   { page: 'account', label: 'Wallet' },
   { page: 'whitelist', label: 'Rules' },
+  { page: 'addressBook', label: 'Book' },
   { page: 'networks', label: 'Chains' },
   { page: 'txlog', label: 'Log' },
-  { page: 'settings', label: 'Settings' },
 ];
+
+function SettingsIcon({ size = 18 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+      <path d="M9.671 4.136a2.34 2.34 0 0 1 4.659 0a2.34 2.34 0 0 0 3.319 1.915a2.34 2.34 0 0 1 2.33 4.033a2.34 2.34 0 0 0 0 3.831a2.34 2.34 0 0 1-2.33 4.033a2.34 2.34 0 0 0-3.319 1.915a2.34 2.34 0 0 1-4.659 0a2.34 2.34 0 0 0-3.32-1.915a2.34 2.34 0 0 1-2.33-4.033a2.34 2.34 0 0 0 0-3.831A2.34 2.34 0 0 1 6.35 6.051a2.34 2.34 0 0 0 3.319-1.915" />
+      <circle cx="12" cy="12" r="3" />
+    </svg>
+  );
+}
 
 export default function App() {
   const [page, setPage] = useState<Page>('loading');
@@ -99,6 +109,14 @@ export default function App() {
                 />
               )}
             </div>
+            <button
+              onClick={() => nav('settings')}
+              className={`settings-icon-btn ${page === 'settings' ? 'active' : ''}`}
+              title="Settings"
+              aria-label="Settings"
+            >
+              <SettingsIcon />
+            </button>
           </div>
 
           {/* Row 2: Navigation tabs */}
@@ -122,6 +140,7 @@ export default function App() {
         {page === 'unlock' && <UnlockPage onUnlock={() => nav('account')} />}
         {page === 'account' && <AccountPage key={activeAccount?.id ?? 'none'} onLock={() => nav('unlock')} />}
         {page === 'whitelist' && <WhitelistPage />}
+        {page === 'addressBook' && <AddressBookPage />}
         {page === 'networks' && <NetworkPage />}
         {page === 'txlog' && <TxLogPage />}
         {page === 'settings' && <SettingsPage />}
