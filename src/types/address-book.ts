@@ -3,4 +3,5 @@ export interface AddressBookEntry {
   name: string;
   address: string;
   createdAt: number;
+  source?: 'addressBook' | 'account';
 }

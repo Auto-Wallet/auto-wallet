@@ -50,7 +50,8 @@ export function matchAddressBookEntries(entries: AddressBookEntry[], query: stri
       else if (address.startsWith(q)) score = 75;
       else if (name.includes(q)) score = 50;
 
-      return { entry, score };
+      const sourceBoost = entry.source === 'account' ? 1 : 0;
+      return { entry, score: score + sourceBoost };
     })
     .filter(({ score }) => score > 0)
     .sort((a, b) => b.score - a.score || a.entry.name.localeCompare(b.entry.name))

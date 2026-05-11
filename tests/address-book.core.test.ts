@@ -83,6 +83,22 @@ describe('address book core', () => {
     expect(resolveAddressBookInput(ENTRIES, '0x1111')).toBe('0x1111111111111111111111111111111111111111');
   });
 
+  test('matches account entries alongside address book entries', () => {
+    const entries: AddressBookEntry[] = [
+      ...ENTRIES,
+      {
+        id: 'account:2',
+        name: 'Savings Account',
+        address: '0x5555555555555555555555555555555555555555',
+        createdAt: 0,
+        source: 'account',
+      },
+    ];
+
+    expect(resolveAddressBookInput(entries, 'savings')).toBe('0x5555555555555555555555555555555555555555');
+    expect(matchAddressBookEntries(entries, '0x5555')[0]?.source).toBe('account');
+  });
+
   test('does not resolve ambiguous matches', () => {
     expect(resolveAddressBookInput(ENTRIES, 'e')).toBeNull();
   });

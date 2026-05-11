@@ -6,6 +6,7 @@ export function NetworkPage() {
   const [networks, setNetworks] = useState<Network[]>([]);
   const [active, setActive] = useState<number>(1);
   const [showForm, setShowForm] = useState(false);
+  const [editingNetwork, setEditingNetwork] = useState<Network | null>(null);
   const [search, setSearch] = useState('');
   const [form, setForm] = useState({ chainId: '', name: '', rpcUrl: '', symbol: '', decimals: '18', blockExplorerUrl: '' });
 
@@ -45,7 +46,33 @@ export function NetworkPage() {
     });
     setForm({ chainId: '', name: '', rpcUrl: '', symbol: '', decimals: '18', blockExplorerUrl: '' });
     setShowForm(false);
+    setEditingNetwork(null);
     loadNetworks();
+  }
+
+  function openAddForm() {
+    setEditingNetwork(null);
+    setForm({ chainId: '', name: '', rpcUrl: '', symbol: '', decimals: '18', blockExplorerUrl: '' });
+    setShowForm(true);
+  }
+
+  function openEditForm(network: Network) {
+    setEditingNetwork(network);
+    setForm({
+      chainId: String(network.chainId),
+      name: network.name,
+      rpcUrl: network.rpcUrl,
+      symbol: network.symbol,
+      decimals: String(network.decimals),
+      blockExplorerUrl: network.blockExplorerUrl ?? '',
+    });
+    setShowForm(true);
+  }
+
+  function closeForm() {
+    setShowForm(false);
+    setEditingNetwork(null);
+    setForm({ chainId: '', name: '', rpcUrl: '', symbol: '', decimals: '18', blockExplorerUrl: '' });
   }
 
   async function removeNetwork(chainId: number) {
@@ -57,7 +84,7 @@ export function NetworkPage() {
     <div className="stack stack-sm animate-in">
       <div className="row row-between">
         <p className="page-title">Networks</p>
-        <button onClick={() => setShowForm(!showForm)} className="btn-ghost accent">
+        <button onClick={showForm ? closeForm : openAddForm} className="btn-ghost accent">
           {showForm ? 'Cancel' : '+ Add'}
         </button>
       </div>
@@ -79,17 +106,31 @@ export function NetworkPage() {
       {/* Add form */}
       {showForm && (
         <div className="card-form">
-          <div className="grid-2">
-            <input className="input-field" placeholder="Chain ID" value={form.chainId} onChange={(e) => setForm({ ...form, chainId: e.target.value })} />
-            <input className="input-field" placeholder="Name" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} style={{ fontFamily: 'var(--font-sans)' }} />
+          <div className="row row-between">
+            <p className="section-label">
+              {editingNetwork ? (editingNetwork.isCustom ? 'Edit Network' : 'View Built-in Network') : 'Add Network'}
+            </p>
+            {editingNetwork && !editingNetwork.isCustom && (
+              <span className="badge badge-off">Built-in</span>
+            )}
           </div>
-          <input className="input-field" placeholder="RPC URL" value={form.rpcUrl} onChange={(e) => setForm({ ...form, rpcUrl: e.target.value })} />
           <div className="grid-2">
-            <input className="input-field" placeholder="Symbol" value={form.symbol} onChange={(e) => setForm({ ...form, symbol: e.target.value })} />
-            <input className="input-field" placeholder="Decimals" value={form.decimals} onChange={(e) => setForm({ ...form, decimals: e.target.value })} />
+            <input className="input-field" placeholder="Chain ID" value={form.chainId} onChange={(e) => setForm({ ...form, chainId: e.target.value })} disabled={!!editingNetwork} />
+            <input className="input-field" placeholder="Name" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} disabled={editingNetwork ? !editingNetwork.isCustom : false} style={{ fontFamily: 'var(--font-sans)' }} />
           </div>
-          <input className="input-field" placeholder="Block explorer URL (optional)" value={form.blockExplorerUrl} onChange={(e) => setForm({ ...form, blockExplorerUrl: e.target.value })} />
-          <button onClick={addNetwork} className="btn-primary">Add Network</button>
+          <input className="input-field" placeholder="RPC URL" value={form.rpcUrl} onChange={(e) => setForm({ ...form, rpcUrl: e.target.value })} disabled={editingNetwork ? !editingNetwork.isCustom : false} />
+          <div className="grid-2">
+            <input className="input-field" placeholder="Symbol" value={form.symbol} onChange={(e) => setForm({ ...form, symbol: e.target.value })} disabled={editingNetwork ? !editingNetwork.isCustom : false} />
+            <input className="input-field" placeholder="Decimals" value={form.decimals} onChange={(e) => setForm({ ...form, decimals: e.target.value })} disabled={editingNetwork ? !editingNetwork.isCustom : false} />
+          </div>
+          <input className="input-field" placeholder="Block explorer URL (optional)" value={form.blockExplorerUrl} onChange={(e) => setForm({ ...form, blockExplorerUrl: e.target.value })} disabled={editingNetwork ? !editingNetwork.isCustom : false} />
+          {editingNetwork?.isCustom === false ? (
+            <button onClick={closeForm} className="btn-secondary">Done</button>
+          ) : (
+            <button onClick={addNetwork} className="btn-primary">
+              {editingNetwork ? 'Save Network' : 'Add Network'}
+            </button>
+          )}
         </div>
       )}
 
@@ -121,6 +162,7 @@ export function NetworkPage() {
             </div>
             <div className="row gap-sm">
               {n.chainId === active && <span className="pulse-dot" />}
+              <button onClick={(e) => { e.stopPropagation(); openEditForm(n); }} className="btn-ghost accent">Edit</button>
               {n.isCustom && (
                 <button onClick={(e) => { e.stopPropagation(); removeNetwork(n.chainId); }} className="btn-ghost danger">Del</button>
               )}

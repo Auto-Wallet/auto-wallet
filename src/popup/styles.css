@@ -537,6 +537,15 @@ input[type="checkbox"]:checked::after {
   font-size: 10px;
   color: var(--text-muted);
 }
+.address-suggestion-source {
+  flex-shrink: 0;
+  font-size: 9px;
+  font-weight: 700;
+  color: var(--success);
+  background: var(--success-bg);
+  border-radius: var(--radius-pill);
+  padding: 1px 5px;
+}
 .address-book-card {
   display: flex;
   align-items: center;

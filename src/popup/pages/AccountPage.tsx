@@ -143,6 +143,7 @@ export function AccountPage({ onLock }: { onLock: () => void }) {
   const [network, setNetwork] = useState<Network | null>(null);
   const [tokens, setTokens] = useState<{ token: Token; balance: string }[]>([]);
   const [addressBook, setAddressBook] = useState<AddressBookEntry[]>([]);
+  const [accounts, setAccounts] = useState<ActiveInfo[]>([]);
   const [copied, setCopied] = useState(false);
   const [active, setActive] = useState<ActiveInfo | null>(null);
 
@@ -168,13 +169,15 @@ export function AccountPage({ onLock }: { onLock: () => void }) {
   useEffect(() => { loadData(); }, []);
 
   async function loadData() {
-    const [info, net] = await Promise.all([
+    const [info, net, accountList] = await Promise.all([
       callBackground<ActiveInfo>('getActiveAccountInfo'),
       callBackground<Network>('getActiveNetwork'),
+      callBackground<ActiveInfo[]>('listAccounts'),
     ]);
     setActive(info);
     setAddress(info.address);
     setNetwork(net);
+    setAccounts(accountList);
 
     const bal = await callBackground<string>('getNativeBalance');
     setBalance(bal);
@@ -218,14 +221,27 @@ export function AccountPage({ onLock }: { onLock: () => void }) {
     setSendError(''); setSendSuccess(''); setSendFee(null); setSelectedAddressBookId(null);
   }
 
+  const sendCandidates = useMemo<AddressBookEntry[]>(() => {
+    const accountEntries = accounts
+      .filter((account) => account.id !== active?.id)
+      .map((account) => ({
+        id: `account:${account.id}`,
+        name: account.label,
+        address: account.address,
+        createdAt: 0,
+        source: 'account' as const,
+      }));
+    return [...accountEntries, ...addressBook];
+  }, [accounts, active?.id, addressBook]);
+
   const sendMatches = useMemo(
-    () => matchAddressBookEntries(addressBook, sendTo).slice(0, 5),
-    [addressBook, sendTo],
+    () => matchAddressBookEntries(sendCandidates, sendTo).slice(0, 5),
+    [sendCandidates, sendTo],
   );
 
   const resolvedSendTo = useMemo(
-    () => resolveAddressBookInput(addressBook, sendTo),
-    [addressBook, sendTo],
+    () => resolveAddressBookInput(sendCandidates, sendTo),
+    [sendCandidates, sendTo],
   );
 
   function selectAddressBookEntry(entry: AddressBookEntry) {
@@ -238,8 +254,8 @@ export function AccountPage({ onLock }: { onLock: () => void }) {
     if (!sendTarget) return;
     const toAddress = resolvedSendTo;
     if (!toAddress) {
-      const matches = matchAddressBookEntries(addressBook, sendTo);
-      setSendError(matches.length > 1 ? 'Multiple address book matches. Pick one.' : 'Invalid address');
+      const matches = matchAddressBookEntries(sendCandidates, sendTo);
+      setSendError(matches.length > 1 ? 'Multiple recipient matches. Pick one.' : 'Invalid address');
       return;
     }
     const amount = parseFloat(sendAmount);
@@ -422,8 +438,11 @@ export function AccountPage({ onLock }: { onLock: () => void }) {
                     className="address-suggestion"
                   >
                     <span className="address-suggestion-name">{entry.name}</span>
-                    <span className="address-suggestion-address">
-                      {entry.address.slice(0, 10)}...{entry.address.slice(-6)}
+                    <span className="row gap-xs" style={{ flexShrink: 0 }}>
+                      {entry.source === 'account' && <span className="address-suggestion-source">Account</span>}
+                      <span className="address-suggestion-address">
+                        {entry.address.slice(0, 10)}...{entry.address.slice(-6)}
+                      </span>
                     </span>
                   </button>
                 ))}
