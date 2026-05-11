@@ -26,6 +26,7 @@ import { RpcError, userRejection } from '../lib/rpc-error';
 import { validateSigner, validateRpcUrl, parseAddChainParams, parseTxParams } from '../lib/rpc-validation';
 import { bufferGas } from '../lib/gas';
 import { simulateTenderlyTx, type TenderlySimulationPreview } from './tenderly-simulation';
+import { parsePersonalSignParams } from '../lib/signing';
 
 // --- Rate limiting for eth_requestAccounts ---
 let lastUnlockPromptTime = 0;
@@ -455,13 +456,13 @@ async function handlePersonalSign(params: unknown[], origin: string): Promise<st
   const ledger = await getLedgerContextOrNull();
   const chainId = await networkManager.getActiveChainId();
   const signerAddress = ledger ? ledger.address : (await keyManager.getAccount()).address;
+  const { messageHex, signer } = parsePersonalSignParams(params);
 
   // SECURITY: Validate requested address matches active account
-  validateSigner(params[1] as string | undefined, signerAddress);
+  validateSigner(signer, signerAddress);
 
-  const message = params[0] as string;
   const ledgerCtx: LedgerConfirmContext | undefined = ledger
-    ? { derivationPath: ledger.derivationPath, messageHex: message }
+    ? { derivationPath: ledger.derivationPath, messageHex }
     : undefined;
 
   const { autoSignResult, signature } = await checkWhitelistOrConfirm(
@@ -479,7 +480,7 @@ async function handlePersonalSign(params: unknown[], origin: string): Promise<st
     sig = signature;
   } else {
     const account = await keyManager.getAccount();
-    sig = await account.signMessage({ message: { raw: message as `0x${string}` } });
+    sig = await account.signMessage({ message: { raw: messageHex } });
   }
   notifySign('personal_sign', origin, autoSignResult.allowed);
   return sig;
