@@ -19,6 +19,7 @@ import { toHex } from 'viem';
 import { bufferGas } from '../lib/gas';
 import { notifyTx } from '../lib/notify';
 import { retryWithNextNonce } from '../lib/nonce';
+import { openLedgerPickerWindow } from './ledger-picker-manager';
 
 /** Handle actions from the Popup UI. */
 export async function handlePopupAction(action: string, payload: any): Promise<unknown> {
@@ -96,6 +97,8 @@ export async function handlePopupAction(action: string, payload: any): Promise<u
       emitAccountsChanged([addr]);
       return addr;
     }
+    case 'pickLedgerAccounts':
+      return openLedgerPickerWindow();
     case 'prepareLedgerSendTx':
       return prepareLedgerSendTx(payload);
     case 'broadcastSignedTx':

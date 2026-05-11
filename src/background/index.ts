@@ -8,6 +8,7 @@ import { handleRpcMethod } from './rpc-handler';
 import { handlePopupAction } from './popup-handler';
 import './unlock-manager'; // register unlock message listener
 import './confirm-manager'; // register confirm message listener
+import './ledger-picker-manager'; // register Ledger picker listener
 
 // --- Message listener ---
 

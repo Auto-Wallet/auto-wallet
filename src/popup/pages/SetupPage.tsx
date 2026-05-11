@@ -1,8 +1,8 @@
 import React, { useState } from 'react';
 import { callBackground } from '../api';
-import { LedgerPicker } from '../LedgerPicker';
 
 type Mode = 'choose' | 'create' | 'import-pk' | 'import-mnemonic' | 'import-ledger';
+type PickedLedgerAccount = { address: string; derivationPath: string; label?: string };
 
 export function SetupPage({ onDone }: { onDone: () => void }) {
   const [mode, setMode] = useState<Mode>('choose');
@@ -35,15 +35,36 @@ export function SetupPage({ onDone }: { onDone: () => void }) {
     } catch (e: any) { setError(e.message); setLoading(false); }
   };
 
-  async function handleLedgerSubmit(seeds: { address: string; derivationPath: string }[]) {
+  async function handleLedgerSubmit(seeds: PickedLedgerAccount[]) {
     if (password.length < 8) { setError('Password must be at least 8 characters'); return; }
     if (password !== confirm) { setError('Passwords do not match'); return; }
     setLoading(true);
     setError('');
     try {
-      await callBackground('setupLedgerWallet', { password, seeds });
+      const walletName = name.trim();
+      const enriched = seeds.map((seed, idx) => ({
+        ...seed,
+        label: seed.label ?? (idx === 0 && walletName ? walletName : undefined),
+      }));
+      await callBackground('setupLedgerWallet', { password, seeds: enriched });
       onDone();
     } catch (e: any) { setError(e.message); setLoading(false); }
+  }
+
+  async function openLedgerPicker() {
+    if (password.length < 8) { setError('Password must be at least 8 characters'); return; }
+    if (password !== confirm) { setError('Passwords do not match'); return; }
+    setLoading(true);
+    setError('');
+    try {
+      const result = await callBackground<{ selected: PickedLedgerAccount[] }>('pickLedgerAccounts');
+      await handleLedgerSubmit(result.selected);
+    } catch (e: any) {
+      if (e.message !== 'Ledger picker was cancelled' && e.message !== 'Ledger picker was closed') {
+        setError(e.message);
+      }
+      setLoading(false);
+    }
   }
 
   if (mode === 'choose') {
@@ -112,11 +133,9 @@ export function SetupPage({ onDone }: { onDone: () => void }) {
             </p>
           )}
           {passwordReady && (
-            <LedgerPicker
-              submitLabel="Import"
-              submitting={loading}
-              onSubmit={({ selected }) => handleLedgerSubmit(selected)}
-            />
+            <button onClick={openLedgerPicker} disabled={loading} className="btn-primary">
+              {loading ? 'Opening...' : 'Open Ledger Picker'}
+            </button>
           )}
         </div>
       )}

@@ -8,6 +8,7 @@ export function NetworkPage() {
   const [showForm, setShowForm] = useState(false);
   const [editingNetwork, setEditingNetwork] = useState<Network | null>(null);
   const [search, setSearch] = useState('');
+  const [confirmDeleteChainId, setConfirmDeleteChainId] = useState<number | null>(null);
   const [form, setForm] = useState({ chainId: '', name: '', rpcUrl: '', symbol: '', decimals: '18', blockExplorerUrl: '' });
 
   useEffect(() => { loadNetworks(); }, []);
@@ -76,7 +77,12 @@ export function NetworkPage() {
   }
 
   async function removeNetwork(chainId: number) {
+    if (confirmDeleteChainId !== chainId) {
+      setConfirmDeleteChainId(chainId);
+      return;
+    }
     await callBackground('removeCustomNetwork', { chainId });
+    setConfirmDeleteChainId(null);
     loadNetworks();
   }
 
@@ -164,7 +170,9 @@ export function NetworkPage() {
               {n.chainId === active && <span className="pulse-dot" />}
               <button onClick={(e) => { e.stopPropagation(); openEditForm(n); }} className="btn-ghost accent">Edit</button>
               {n.isCustom && (
-                <button onClick={(e) => { e.stopPropagation(); removeNetwork(n.chainId); }} className="btn-ghost danger">Del</button>
+                <button onClick={(e) => { e.stopPropagation(); removeNetwork(n.chainId); }} className="btn-ghost danger">
+                  {confirmDeleteChainId === n.chainId ? 'Confirm' : 'Del'}
+                </button>
               )}
             </div>
           </div>

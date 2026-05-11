@@ -18,6 +18,7 @@ export function AddressBookPage() {
   const [name, setName] = useState('');
   const [address, setAddress] = useState('');
   const [error, setError] = useState('');
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
 
   useEffect(() => { loadEntries(); }, []);
 
@@ -39,7 +40,12 @@ export function AddressBookPage() {
   }
 
   async function removeEntry(id: string) {
+    if (confirmDeleteId !== id) {
+      setConfirmDeleteId(id);
+      return;
+    }
     setEntries(await callBackground<AddressBookEntry[]>('removeAddressBookEntry', { id }));
+    setConfirmDeleteId(null);
   }
 
   return (
@@ -87,7 +93,7 @@ export function AddressBookPage() {
             </div>
           </div>
           <button onClick={() => removeEntry(entry.id)} className="btn-ghost danger" style={{ fontSize: 10, opacity: 0.5 }}>
-            Del
+            {confirmDeleteId === entry.id ? 'Confirm' : 'Del'}
           </button>
         </div>
       ))}

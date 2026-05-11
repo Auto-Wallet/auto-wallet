@@ -14,6 +14,7 @@ export function WhitelistPage() {
   const [enableOrigin, setEnableOrigin] = useState(true);
   const [enableContract, setEnableContract] = useState(false);
   const [enableMethod, setEnableMethod] = useState(false);
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
 
   useEffect(() => { loadRules(); }, []);
 
@@ -47,7 +48,12 @@ export function WhitelistPage() {
   }
 
   async function deleteRule(id: string) {
+    if (confirmDeleteId !== id) {
+      setConfirmDeleteId(id);
+      return;
+    }
     await callBackground('removeRule', { id });
+    setConfirmDeleteId(null);
     loadRules();
   }
 
@@ -107,7 +113,9 @@ export function WhitelistPage() {
                 style={{ cursor: 'pointer', border: 'none' }}>
                 {rule.enabled ? 'ON' : 'OFF'}
               </button>
-              <button onClick={() => deleteRule(rule.id)} className="btn-ghost danger">Del</button>
+              <button onClick={() => deleteRule(rule.id)} className="btn-ghost danger">
+                {confirmDeleteId === rule.id ? 'Confirm' : 'Del'}
+              </button>
             </div>
           </div>
           <div className="rule-detail">
