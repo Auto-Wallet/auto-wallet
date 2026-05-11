@@ -44,7 +44,12 @@ async function buildEntry(entry: string, outputName: string) {
     process.exit(1);
   }
   // Move output to final destination
-  const builtPath = result.outputs[0].path;
+  const output = result.outputs[0];
+  if (!output) {
+    console.error(`Build failed for ${entry}: no output produced`);
+    process.exit(1);
+  }
+  const builtPath = output.path;
   const targetPath = join(DIST, outputName);
   renameSync(builtPath, targetPath);
   rmSync(tempDir, { recursive: true });

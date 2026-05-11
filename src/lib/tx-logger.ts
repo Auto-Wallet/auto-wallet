@@ -43,7 +43,9 @@ export async function updateLogEntry(id: string, patch: Partial<TxLogEntry>): Pr
   const log = await getLog();
   const idx = log.findIndex((e) => e.id === id);
   if (idx >= 0) {
-    log[idx] = { ...log[idx], ...patch };
+    const existing = log[idx];
+    if (!existing) return;
+    log[idx] = { ...existing, ...patch };
     await setItem(STORAGE_KEYS.TX_LOG, log);
   }
 }

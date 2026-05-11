@@ -37,7 +37,9 @@ export async function getActiveNetwork(): Promise<Network> {
   const stored = await getItem<number>(STORAGE_KEYS.ACTIVE_CHAIN_ID);
   if (stored !== null) activeChainId = stored;
   const networks = await getAllNetworks();
-  return findNetwork(networks, activeChainId) ?? DEFAULT_NETWORKS[0];
+  const defaultNetwork = DEFAULT_NETWORKS[0];
+  if (!defaultNetwork) throw new Error('No default network configured');
+  return findNetwork(networks, activeChainId) ?? defaultNetwork;
 }
 
 export async function switchNetwork(chainId: number): Promise<Network> {

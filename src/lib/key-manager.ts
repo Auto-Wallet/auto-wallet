@@ -447,7 +447,9 @@ export async function renameAccount(accountId: string, newLabel: string): Promis
   const accounts = await getStoredAccounts();
   const idx = accounts.findIndex((a) => a.id === accountId);
   if (idx < 0) throw new Error('Account not found');
-  accounts[idx].label = newLabel;
+  const account = accounts[idx];
+  if (!account) throw new Error('Account not found');
+  account.label = newLabel;
   await saveStoredAccounts(accounts);
 }
 
@@ -459,11 +461,13 @@ export async function removeAccount(accountId: string): Promise<void> {
   unlockedAccounts.delete(accountId);
 
   if (activeAccountId === accountId) {
-    activeAccountId = filtered[0].id;
+    const nextActive = filtered[0];
+    if (!nextActive) throw new Error('No account available after removal');
+    activeAccountId = nextActive.id;
     await setItem(STORAGE_KEYS.ACTIVE_ACCOUNT_ID, activeAccountId);
-    if (masterPassword && !isLedger(filtered[0]) && filtered[0].encrypted) {
-      const plaintext = await decrypt(filtered[0].encrypted, masterPassword);
-      unlockedAccounts.set(filtered[0].id, decryptToAccount(plaintext));
+    if (masterPassword && !isLedger(nextActive) && nextActive.encrypted) {
+      const plaintext = await decrypt(nextActive.encrypted, masterPassword);
+      unlockedAccounts.set(nextActive.id, decryptToAccount(plaintext));
     }
     await saveSession();
   }

@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Auto Wallet",
-  "version": "0.5.0",
+  "version": "0.5.1",
   "description": "Minimal auto-signing wallet for EVM chains",
   "permissions": ["storage", "windows", "notifications", "hid"],
   "host_permissions": ["https://api.tenderly.co/*"],
@@ -25,12 +25,14 @@
   "content_scripts": [
     {
       "matches": ["<all_urls>"],
+      "exclude_matches": ["https://docs.google.com/*"],
       "js": ["content.js"],
       "run_at": "document_start",
       "world": "ISOLATED"
     },
     {
       "matches": ["<all_urls>"],
+      "exclude_matches": ["https://docs.google.com/*"],
       "js": ["inpage.js"],
       "run_at": "document_start",
       "world": "MAIN"

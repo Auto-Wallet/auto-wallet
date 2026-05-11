@@ -188,16 +188,19 @@ function extractAssetChanges(data: any, signer: string): SimulatedTokenChange[] 
 
   return Array.from(totals.entries())
     .filter(([, item]) => item.raw !== 0n)
-    .map(([key, item]) => ({
-      key,
-      symbol: item.symbol,
-      name: item.name,
-      address: item.address,
-      decimals: item.decimals,
-      rawDelta: item.raw.toString(),
-      formattedDelta: formatDelta(item.raw, item.decimals),
-      direction: item.raw > 0n ? 'in' : 'out',
-    }))
+    .map(([key, item]): SimulatedTokenChange => {
+      const direction: SimulatedTokenChange['direction'] = item.raw > 0n ? 'in' : 'out';
+      return {
+        key,
+        symbol: item.symbol,
+        name: item.name,
+        address: item.address,
+        decimals: item.decimals,
+        rawDelta: item.raw.toString(),
+        formattedDelta: formatDelta(item.raw, item.decimals),
+        direction,
+      };
+    })
     .sort((a, b) => {
       if (a.direction !== b.direction) return a.direction === 'out' ? -1 : 1;
       return a.symbol.localeCompare(b.symbol);

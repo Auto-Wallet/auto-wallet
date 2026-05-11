@@ -1,6 +1,7 @@
 // Injected into MAIN world — provides window.ethereum (EIP-1193) + EIP-6963
 
 import { MSG_SOURCE, genId } from '../types/messages';
+import { isProviderInjectionAllowed } from '../lib/injection-policy';
 
 type EventHandler = (...args: any[]) => void;
 
@@ -161,6 +162,11 @@ class AutoWalletProvider {
 
 // --- Initialize ---
 
+if (isProviderInjectionAllowed(window.location.href)) {
+  initializeProvider();
+}
+
+function initializeProvider() {
 const provider = new AutoWalletProvider();
 
 // EIP-6963: announce provider
@@ -221,10 +227,11 @@ const fallbackTimer = setTimeout(() => {
 }, 100);
 
 window.addEventListener('message', (event) => {
-  if (event.source !== window && event.data?.source === MSG_SOURCE && event.data?.type === 'inject_setting') {
+  if (event.source === window && event.data?.source === MSG_SOURCE && event.data?.type === 'inject_setting') {
     clearTimeout(fallbackTimer);
   }
 });
 
 // Always expose under our own namespace
 (window as any).autoWallet = provider;
+}

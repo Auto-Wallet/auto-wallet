@@ -28,7 +28,9 @@ export async function updateRule(id: string, patch: Partial<WhitelistRule>): Pro
   const rules = await getRules();
   const idx = rules.findIndex((r) => r.id === id);
   if (idx < 0) throw new Error(`Rule not found: ${id}`);
-  rules[idx] = { ...rules[idx], ...patch };
+  const existing = rules[idx];
+  if (!existing) throw new Error(`Rule not found: ${id}`);
+  rules[idx] = { ...existing, ...patch };
   await saveRules(rules);
 }
 

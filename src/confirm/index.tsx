@@ -137,7 +137,8 @@ function ConfirmPage() {
     if (requestId) {
       const key = `confirm_${requestId}`;
       chrome.storage.session.get(key, (result) => {
-        if (result[key]) setRequest(result[key]);
+        const stored = result[key] as PendingRequest | undefined;
+        if (stored) setRequest(stored);
       });
     }
   }, []);

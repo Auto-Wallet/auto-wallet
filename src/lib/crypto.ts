@@ -12,7 +12,7 @@ export interface EncryptedData {
   salt: string;       // base64
 }
 
-async function deriveKey(password: string, salt: Uint8Array): Promise<CryptoKey> {
+async function deriveKey(password: string, salt: BufferSource): Promise<CryptoKey> {
   const encoder = new TextEncoder();
   const keyMaterial = await crypto.subtle.importKey(
     'raw',
@@ -30,13 +30,16 @@ async function deriveKey(password: string, salt: Uint8Array): Promise<CryptoKey>
   );
 }
 
-function toBase64(buf: ArrayBuffer): string {
-  return btoa(String.fromCharCode(...new Uint8Array(buf)));
+function toBase64(buf: ArrayBuffer | ArrayBufferView): string {
+  const bytes = buf instanceof ArrayBuffer
+    ? new Uint8Array(buf)
+    : new Uint8Array(buf.buffer, buf.byteOffset, buf.byteLength);
+  return btoa(String.fromCharCode(...bytes));
 }
 
-function fromBase64(b64: string): Uint8Array {
+function fromBase64(b64: string): Uint8Array<ArrayBuffer> {
   const binary = atob(b64);
-  const bytes = new Uint8Array(binary.length);
+  const bytes = new Uint8Array(new ArrayBuffer(binary.length));
   for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
   return bytes;
 }

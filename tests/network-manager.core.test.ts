@@ -46,8 +46,8 @@ describe('mergeNetworks', () => {
   test('combines defaults and custom, defaults first', () => {
     const result = mergeNetworks([ethereum], [customNet]);
     expect(result).toHaveLength(2);
-    expect(result[0].chainId).toBe(1);
-    expect(result[1].chainId).toBe(999);
+    expect(result[0]!.chainId).toBe(1);
+    expect(result[1]!.chainId).toBe(999);
   });
 
   test('empty custom → only defaults', () => {
@@ -58,7 +58,7 @@ describe('mergeNetworks', () => {
   test('empty defaults → only custom', () => {
     const result = mergeNetworks([], [customNet]);
     expect(result).toHaveLength(1);
-    expect(result[0].name).toBe('TestNet');
+    expect(result[0]!.name).toBe('TestNet');
   });
 
   test('both empty → empty', () => {
@@ -115,8 +115,8 @@ describe('upsertCustomNetwork', () => {
   test('insert new network into empty list', () => {
     const result = upsertCustomNetwork([], customNet);
     expect(result).toHaveLength(1);
-    expect(result[0].chainId).toBe(999);
-    expect(result[0].isCustom).toBe(true);
+    expect(result[0]!.chainId).toBe(999);
+    expect(result[0]!.isCustom).toBe(true);
   });
 
   test('insert new network into existing list', () => {
@@ -130,16 +130,16 @@ describe('upsertCustomNetwork', () => {
     const updated = { ...customNet, name: 'New Name' };
     const result = upsertCustomNetwork([original], updated);
     expect(result).toHaveLength(1);
-    expect(result[0].name).toBe('New Name');
-    expect(result[0].isCustom).toBe(true);
+    expect(result[0]!.name).toBe('New Name');
+    expect(result[0]!.isCustom).toBe(true);
   });
 
   test('does not mutate input array', () => {
     const input = [customNet];
     const updated = { ...customNet, name: 'Changed' };
     const result = upsertCustomNetwork(input, updated);
-    expect(input[0].name).toBe('TestNet'); // original unchanged
-    expect(result[0].name).toBe('Changed');
+    expect(input[0]!.name).toBe('TestNet'); // original unchanged
+    expect(result[0]!.name).toBe('Changed');
   });
 });
 
@@ -151,7 +151,7 @@ describe('removeFromList', () => {
   test('removes matching network', () => {
     const result = removeFromList([ethereum, customNet], 999);
     expect(result).toHaveLength(1);
-    expect(result[0].chainId).toBe(1);
+    expect(result[0]!.chainId).toBe(1);
   });
 
   test('no match → returns same length', () => {
