@@ -10,7 +10,19 @@ import {
   signTypedDataHashed as ledgerSignTypedDataHashed,
 } from '../lib/ledger';
 import { buildSignedRawTx, hydrateTx, type SerializedTxJSON } from '../popup/ledger-signer';
-import { serializeTransaction, type TransactionSerializable } from 'viem';
+import {
+  decodeFunctionData,
+  encodeFunctionData,
+  erc20Abi,
+  formatUnits,
+  parseUnits,
+  serializeTransaction,
+  type TransactionSerializable,
+} from 'viem';
+import { callBackground } from '../popup/api';
+import { DEFAULT_NETWORKS, type Network } from '../types/network';
+import { findNetwork, mergeNetworks } from '../lib/network-manager.core';
+import { STORAGE_KEYS } from '../lib/storage';
 import '../popup/styles.css';
 
 interface LedgerCtx {
@@ -38,6 +50,20 @@ type SimulationPreview = {
   changes: SimulatedTokenChange[];
 };
 
+type ApprovalDetails = {
+  tokenAddress: `0x${string}`;
+  spender: `0x${string}`;
+  amountRaw: bigint;
+};
+
+type ApprovalTokenInfo = {
+  symbol: string;
+  decimals: number;
+  name?: string;
+  balanceRaw: string;
+  balance: string;
+};
+
 interface PendingRequest {
   id: string;
   method: string;
@@ -45,6 +71,7 @@ interface PendingRequest {
   params: any;
   signerAddress?: string;
   chainId?: number;
+  chainName?: string;
   ledger?: LedgerCtx;
   simulation?: SimulationPreview;
 }
@@ -64,6 +91,32 @@ function prettyTypedData(value: unknown): string {
 function shortAddress(value?: string): string {
   if (!value) return '';
   return `${value.slice(0, 6)}...${value.slice(-4)}`;
+}
+
+function resolveStoredChainName(chainId: number, callback: (name: string | undefined) => void): void {
+  chrome.storage.local.get(STORAGE_KEYS.NETWORKS, (result) => {
+    const custom = (result[STORAGE_KEYS.NETWORKS] as Network[] | undefined) ?? [];
+    callback(findNetwork(mergeNetworks(DEFAULT_NETWORKS, custom), chainId)?.name);
+  });
+}
+
+function parseApprovalDetails(tx: any): ApprovalDetails | null {
+  if (!tx?.to || !tx?.data) return null;
+  try {
+    const decoded = decodeFunctionData({
+      abi: erc20Abi,
+      data: tx.data as `0x${string}`,
+    });
+    if (decoded.functionName !== 'approve') return null;
+    const [spender, amount] = decoded.args as [`0x${string}`, bigint];
+    return {
+      tokenAddress: tx.to as `0x${string}`,
+      spender,
+      amountRaw: amount,
+    };
+  } catch {
+    return null;
+  }
 }
 
 function SimulationChanges({ simulation }: { simulation?: SimulationPreview }) {
@@ -130,6 +183,9 @@ function ConfirmPage() {
   const [busy, setBusy] = useState(false);
   const [busyMsg, setBusyMsg] = useState('');
   const [error, setError] = useState('');
+  const [approvalInfo, setApprovalInfo] = useState<ApprovalTokenInfo | null>(null);
+  const [approvalAmount, setApprovalAmount] = useState('');
+  const [approvalError, setApprovalError] = useState('');
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -138,10 +194,58 @@ function ConfirmPage() {
       const key = `confirm_${requestId}`;
       chrome.storage.session.get(key, (result) => {
         const stored = result[key] as PendingRequest | undefined;
-        if (stored) setRequest(stored);
+        if (!stored) return;
+        setRequest(stored);
+        if (stored.chainId && !stored.chainName) {
+          resolveStoredChainName(stored.chainId, (chainName) => {
+            if (chainName) setRequest((current) => current ? { ...current, chainName } : current);
+          });
+        }
       });
     }
   }, []);
+
+  useEffect(() => {
+    if (!request || request.method !== 'eth_sendTransaction') return;
+    const details = parseApprovalDetails(request.params?.[0]);
+    if (!details || !request.signerAddress || !request.chainId) {
+      setApprovalInfo(null);
+      setApprovalAmount('');
+      setApprovalError('');
+      return;
+    }
+
+    let cancelled = false;
+    callBackground<ApprovalTokenInfo>('getApprovalTokenInfo', {
+      chainId: request.chainId,
+      tokenAddress: details.tokenAddress,
+      owner: request.signerAddress,
+    }).then((info) => {
+      if (cancelled) return;
+      setApprovalInfo(info);
+      setApprovalAmount(formatUnits(details.amountRaw, info.decimals));
+      setApprovalError('');
+    }).catch((e: any) => {
+      if (!cancelled) setApprovalError(e?.message ?? 'Failed to load token balance');
+    });
+
+    return () => { cancelled = true; };
+  }, [request]);
+
+  function buildApprovalDataOverride(): `0x${string}` | null {
+    if (!request) return null;
+    const details = parseApprovalDetails(request.params?.[0]);
+    if (!details) return null;
+    if (!approvalInfo) throw new Error('Token balance is still loading');
+    const trimmed = approvalAmount.trim();
+    if (!trimmed) throw new Error('Approve amount is required');
+    const amount = parseUnits(trimmed, approvalInfo.decimals);
+    return encodeFunctionData({
+      abi: erc20Abi,
+      functionName: 'approve',
+      args: [details.spender, amount],
+    });
+  }
 
   function applyFeeToTxJson(json: SerializedTxJSON, fee: FeeOverride | null): SerializedTxJSON {
     if (!fee) return json;
@@ -165,6 +269,13 @@ function ConfirmPage() {
     setError('');
     const ledger = request?.ledger;
     if (!ledger) {
+      let txDataOverride: `0x${string}` | null = null;
+      try {
+        txDataOverride = buildApprovalDataOverride();
+      } catch (e: any) {
+        setApprovalError(e?.message ?? 'Invalid approve amount');
+        return;
+      }
       // Software signing happens server-side
       chrome.runtime.sendMessage({
         source: MSG_SOURCE,
@@ -174,6 +285,7 @@ function ConfirmPage() {
         addToWhitelist,
         origin: request?.origin,
         feeOverride: request?.method === 'eth_sendTransaction' ? feeOverride : null,
+        txDataOverride,
       });
       window.close();
       return;
@@ -187,7 +299,11 @@ function ConfirmPage() {
 
       if (request!.method === 'eth_sendTransaction' && ledger.txJson) {
         setBusyMsg('Confirm on your Ledger device…');
-        const finalTx = applyFeeToTxJson(ledger.txJson, feeOverride);
+        const txDataOverride = buildApprovalDataOverride();
+        const finalTx = applyFeeToTxJson({
+          ...ledger.txJson,
+          data: txDataOverride ?? ledger.txJson.data,
+        }, feeOverride);
         // Re-serialize unsigned hex with the (potentially edited) fee values
         const unsignedHex = serializeTransaction(hydrateTx(finalTx) as TransactionSerializable)
           .replace(/^0x/, '');
@@ -215,6 +331,7 @@ function ConfirmPage() {
         approved: true,
         addToWhitelist: false,    // ledger always requires user; whitelist is meaningless
         origin: request!.origin,
+        txDataOverride: buildApprovalDataOverride(),
         signedRawTx,
         signature,
       });
@@ -255,13 +372,27 @@ function ConfirmPage() {
   const to = tx.to ?? 'Contract creation';
   const calldata = tx.data;
   const methodSig = calldata?.slice(0, 10) ?? '-';
+  const approvalDetails = isTransaction ? parseApprovalDetails(tx) : null;
+  const requestedApprovalAmount = approvalDetails && approvalInfo
+    ? formatUnits(approvalDetails.amountRaw, approvalInfo.decimals)
+    : '';
+  let approvalDataForFee: `0x${string}` | undefined;
+  if (approvalDetails && approvalInfo && approvalAmount.trim()) {
+    try {
+      approvalDataForFee = encodeFunctionData({
+        abi: erc20Abi,
+        functionName: 'approve',
+        args: [approvalDetails.spender, parseUnits(approvalAmount.trim(), approvalInfo.decimals)],
+      });
+    } catch {}
+  }
 
   // Extract domain from origin
   let domain = request.origin;
   try { domain = new URL(request.origin).hostname; } catch {}
 
   const feeRequest: FeeEditorRequest | null = isTransaction
-    ? { to: tx.to, from: tx.from, data: tx.data, value: tx.value }
+    ? { to: tx.to, from: tx.from, data: approvalDataForFee ?? tx.data, value: tx.value }
     : null;
 
   // For Ledger sends, prefill FeeEditor from the prepared tx (which already has resolved fees).
@@ -317,7 +448,10 @@ function ConfirmPage() {
               {request.chainId && (
                 <div className="confirm-field" style={{ marginBottom: 0, textAlign: 'right' }}>
                   <span className="confirm-label">Chain</span>
-                  <span className="confirm-value mono">{request.chainId}</span>
+                  <div className="confirm-chain">
+                    <span className="confirm-chain-name">{request.chainName ?? `Chain ${request.chainId}`}</span>
+                    <span className="chain-id-pill">#{request.chainId}</span>
+                  </div>
                 </div>
               )}
             </div>
@@ -351,6 +485,73 @@ function ConfirmPage() {
                 <span className="confirm-value mono">{methodSig}</span>
               </div>
             </div>
+            {approvalDetails && (
+              <div className="approval-editor">
+                <div className="confirm-row" style={{ alignItems: 'center', marginBottom: 8 }}>
+                  <span className="confirm-label" style={{ marginBottom: 0 }}>ERC-20 Approve</span>
+                  <span className="approval-pill">Editable</span>
+                </div>
+                <div className="confirm-field">
+                  <span className="confirm-label">Token</span>
+                  <span className="confirm-value mono truncate">{approvalInfo?.symbol ?? to}</span>
+                </div>
+                <div className="confirm-field">
+                  <span className="confirm-label">Spender</span>
+                  <span className="confirm-value mono truncate">{approvalDetails.spender}</span>
+                </div>
+                <div className="confirm-field">
+                  <span className="confirm-label">Approve Amount</span>
+                  <div className="approval-input-row">
+                    <input
+                      className="input-field approval-input"
+                      value={approvalAmount}
+                      onChange={(e) => {
+                        setApprovalAmount(e.target.value);
+                        setApprovalError('');
+                      }}
+                      inputMode="decimal"
+                      placeholder={approvalInfo ? `Amount (${approvalInfo.symbol})` : 'Loading token...'}
+                      disabled={!approvalInfo}
+                    />
+                  </div>
+                </div>
+                <div className="approval-reference-row">
+                  <span className="approval-balance">
+                    Balance: {approvalInfo ? `${approvalInfo.balance} ${approvalInfo.symbol}` : 'Loading...'}
+                  </span>
+                  <button
+                    type="button"
+                    className="approval-link-btn"
+                    disabled={!approvalInfo}
+                    onClick={() => {
+                      if (!approvalInfo) return;
+                      setApprovalAmount(approvalInfo.balance);
+                      setApprovalError('');
+                    }}
+                  >
+                    Use Balance
+                  </button>
+                </div>
+                <div className="approval-reference-row">
+                  <span className="approval-balance">
+                    Requested: {approvalInfo ? `${requestedApprovalAmount} ${approvalInfo.symbol}` : 'Loading...'}
+                  </span>
+                  <button
+                    type="button"
+                    className="approval-link-btn"
+                    disabled={!approvalInfo}
+                    onClick={() => {
+                      if (!approvalInfo) return;
+                      setApprovalAmount(requestedApprovalAmount);
+                      setApprovalError('');
+                    }}
+                  >
+                    Use Requested
+                  </button>
+                </div>
+                {approvalError && <p className="error-text">{approvalError}</p>}
+              </div>
+            )}
             {calldata && calldata.length > 10 && (
               <div className="confirm-field">
                 <span className="confirm-label">Data</span>

@@ -7,7 +7,7 @@ import * as addressBook from '../lib/address-book';
 import { getClient } from '../lib/network-manager';
 import { getItem, setItem, STORAGE_KEYS } from '../lib/storage';
 import {
-  formatEther, parseEther, parseUnits, encodeFunctionData, erc20Abi, hexToBigInt,
+  formatEther, formatUnits, parseEther, parseUnits, encodeFunctionData, erc20Abi, hexToBigInt,
   serializeTransaction, type TransactionSerializable,
 } from 'viem';
 import { genId } from '../types/messages';
@@ -229,6 +229,31 @@ export async function handlePopupAction(action: string, payload: any): Promise<u
       return tokenManager.removeToken(payload.chainId, payload.address);
     case 'getTokenBalance':
       return tokenManager.getTokenBalance(payload.token, await keyManager.getAddress());
+    case 'getApprovalTokenInfo': {
+      const chainId = Number(payload.chainId);
+      const tokenAddress = payload.tokenAddress as `0x${string}`;
+      const owner = payload.owner as `0x${string}`;
+      const client = await getClient(chainId);
+      const [symbol, decimals, name, rawBalance] = await Promise.all([
+        client.readContract({ address: tokenAddress, abi: erc20Abi, functionName: 'symbol' }).catch(() => 'TOKEN'),
+        client.readContract({ address: tokenAddress, abi: erc20Abi, functionName: 'decimals' }).catch(() => 18),
+        client.readContract({ address: tokenAddress, abi: erc20Abi, functionName: 'name' }).catch(() => undefined),
+        client.readContract({
+          address: tokenAddress,
+          abi: erc20Abi,
+          functionName: 'balanceOf',
+          args: [owner],
+        }),
+      ]);
+      const normalizedDecimals = Number(decimals);
+      return {
+        symbol: String(symbol),
+        decimals: normalizedDecimals,
+        name: name ? String(name) : undefined,
+        balanceRaw: (rawBalance as bigint).toString(),
+        balance: formatUnits(rawBalance as bigint, normalizedDecimals),
+      };
+    }
 
     // --- Address book ---
     case 'getAddressBook':

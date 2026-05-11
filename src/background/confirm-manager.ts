@@ -22,6 +22,7 @@ export interface FeeOverride {
 export interface ConfirmResult {
   approved: boolean;
   feeOverride?: FeeOverride | null;
+  txDataOverride?: `0x${string}` | null;
   signedRawTx?: `0x${string}` | null;
   signature?: `0x${string}` | null;
 }
@@ -64,6 +65,7 @@ export interface ConfirmRequest {
   params: unknown;
   signerAddress?: string;
   chainId?: number;
+  chainName?: string;
   ledger?: LedgerConfirmContext;
   simulation?: TenderlySimulationPreview;
 }
@@ -114,6 +116,7 @@ chrome.runtime.onMessage.addListener((message) => {
     pending.resolve({
       approved: message.approved === true,
       feeOverride: message.feeOverride ?? null,
+      txDataOverride: message.txDataOverride ?? null,
       signedRawTx: message.signedRawTx ?? null,
       signature: message.signature ?? null,
     });

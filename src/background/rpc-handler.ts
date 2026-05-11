@@ -195,9 +195,11 @@ async function checkWhitelistOrConfirm(
   signerAddress: string,
   ledger?: LedgerConfirmContext,
   simulation?: TenderlySimulationPreview,
+  chainName?: string,
 ): Promise<{
   autoSignResult: whitelist.AutoSignCheckResult;
   feeOverride: FeeOverride | null;
+  txDataOverride: `0x${string}` | null;
   signedRawTx: `0x${string}` | null;
   signature: `0x${string}` | null;
 }> {
@@ -214,16 +216,17 @@ async function checkWhitelistOrConfirm(
       });
 
   if (autoSignResult.allowed) {
-    return { autoSignResult, feeOverride: null, signedRawTx: null, signature: null };
+    return { autoSignResult, feeOverride: null, txDataOverride: null, signedRawTx: null, signature: null };
   }
 
-  const { approved, feeOverride, signedRawTx, signature } = await requestUserConfirmation({
+  const { approved, feeOverride, txDataOverride, signedRawTx, signature } = await requestUserConfirmation({
     id: genId(),
     method,
     origin,
     params,
     signerAddress,
     chainId: ctx.chainId,
+    chainName,
     ledger,
     simulation,
   });
@@ -233,6 +236,7 @@ async function checkWhitelistOrConfirm(
   return {
     autoSignResult,
     feeOverride: feeOverride ?? null,
+    txDataOverride: txDataOverride ?? null,
     signedRawTx: signedRawTx ?? null,
     signature: signature ?? null,
   };
@@ -360,7 +364,7 @@ async function handleSendTransaction(params: unknown[], origin: string): Promise
     nativeSymbol: network.symbol,
   });
 
-  const { autoSignResult, feeOverride, signedRawTx } = await checkWhitelistOrConfirm(
+  const { autoSignResult, feeOverride, txDataOverride, signedRawTx } = await checkWhitelistOrConfirm(
     'eth_sendTransaction',
     origin,
     [tx],
@@ -374,9 +378,11 @@ async function handleSendTransaction(params: unknown[], origin: string): Promise
     signerAddress,
     ledgerCtx,
     simulation,
+    network.name,
   );
 
   let hash: `0x${string}`;
+  const effectiveData = txDataOverride ?? parsed.data;
   let effGas = finalGas;
   let effMaxFee = txMaxFee;
   let effPriority = txPriority;
@@ -412,7 +418,7 @@ async function handleSendTransaction(params: unknown[], origin: string): Promise
     const txArgs: any = {
       to: parsed.to as `0x${string}`,
       value: parsed.valueBigInt,
-      data: (parsed.data as `0x${string}`) ?? undefined,
+      data: (effectiveData as `0x${string}`) ?? undefined,
       gas: effGas,
       chain,
     };
@@ -454,7 +460,8 @@ async function handleSendTransaction(params: unknown[], origin: string): Promise
 
 async function handlePersonalSign(params: unknown[], origin: string): Promise<string> {
   const ledger = await getLedgerContextOrNull();
-  const chainId = await networkManager.getActiveChainId();
+  const network = await networkManager.getActiveNetwork();
+  const chainId = network.chainId;
   const signerAddress = ledger ? ledger.address : (await keyManager.getAccount()).address;
   const { messageHex } = preparePersonalSignParams(params, signerAddress);
 
@@ -469,6 +476,8 @@ async function handlePersonalSign(params: unknown[], origin: string): Promise<st
     { to: null, data: null, value: '0', gasLimit: null, chainId },
     signerAddress,
     ledgerCtx,
+    undefined,
+    network.name,
   );
 
   let sig: `0x${string}`;
@@ -485,7 +494,8 @@ async function handlePersonalSign(params: unknown[], origin: string): Promise<st
 
 async function handleSignTypedData(params: unknown[], origin: string): Promise<string> {
   const ledger = await getLedgerContextOrNull();
-  const chainId = await networkManager.getActiveChainId();
+  const network = await networkManager.getActiveNetwork();
+  const chainId = network.chainId;
   const signerAddress = ledger ? ledger.address : (await keyManager.getAccount()).address;
 
   // SECURITY: Validate requested address matches active account
@@ -521,6 +531,8 @@ async function handleSignTypedData(params: unknown[], origin: string): Promise<s
     { to: null, data: null, value: '0', gasLimit: null, chainId },
     signerAddress,
     ledgerCtx,
+    undefined,
+    network.name,
   );
 
   let sig: `0x${string}`;
