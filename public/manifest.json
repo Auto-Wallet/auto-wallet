@@ -1,10 +1,10 @@
 {
   "manifest_version": 3,
   "name": "Auto Wallet",
-  "version": "0.8.0",
+  "version": "0.9.0",
   "description": "Minimal auto-signing wallet for EVM chains",
   "permissions": ["storage", "windows", "notifications"],
-  "host_permissions": ["https://api.tenderly.co/*"],
+  "host_permissions": ["https://balance-change-simulate-api.wanscan.org/*"],
   "background": {
     "service_worker": "background.js",
     "type": "module"

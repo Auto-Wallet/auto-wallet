@@ -25,7 +25,7 @@ import { emitChainChanged } from './events';
 import { RpcError, userRejection } from '../lib/rpc-error';
 import { validateSigner, validateRpcUrl, parseAddChainParams, parseTxParams } from '../lib/rpc-validation';
 import { bufferGas } from '../lib/gas';
-import { simulateTenderlyTx, type TenderlySimulationPreview } from './tenderly-simulation';
+import { simulateTx, type SimulationPreview } from './bcs-simulation';
 import { preparePersonalSignParams, signPreparedPersonalMessage } from '../lib/signing';
 import { retryWithNextNonce } from '../lib/nonce';
 
@@ -195,7 +195,7 @@ async function checkWhitelistOrConfirm(
   ctx: { to: string | null; data: string | null; value: string; gasLimit: string | null; chainId: number },
   signerAddress: string,
   ledger?: LedgerConfirmContext,
-  simulation?: TenderlySimulationPreview,
+  simulation?: SimulationPreview,
   chainName?: string,
 ): Promise<{
   autoSignResult: whitelist.AutoSignCheckResult;
@@ -354,14 +354,13 @@ async function handleSendTransaction(params: unknown[], origin: string): Promise
     };
   }
 
-  const simulation = await simulateTenderlyTx({
+  const simulation = await simulateTx({
     chainId,
     from: signerAddress,
     to: parsed.to,
     input: parsed.data,
     value: parsed.valueBigInt,
     gas: finalGas,
-    gasPrice: txGasPrice ?? txMaxFee,
     nativeSymbol: network.symbol,
   });
 

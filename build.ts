@@ -35,8 +35,11 @@ async function buildEntry(entry: string, outputName: string) {
     target: 'browser',
     minify: true,
     define: {
-      __TENDERLY_ACCESS_TOKEN__: JSON.stringify(localEnv.TENDERLY_ACCESS_TOKEN ?? Bun.env.TENDERLY_ACCESS_TOKEN ?? ''),
-      __TENDERLY_API_URL__: JSON.stringify(localEnv.TENDERLY_API_URL ?? Bun.env.TENDERLY_API_URL ?? ''),
+      __BCS_API_URL__: JSON.stringify(
+        localEnv.BCS_API_URL
+          ?? Bun.env.BCS_API_URL
+          ?? 'https://balance-change-simulate-api.wanscan.org',
+      ),
     },
   });
   if (!result.success) {
