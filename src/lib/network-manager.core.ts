@@ -4,9 +4,10 @@
 import type { Chain } from 'viem';
 import type { Network } from '../types/network';
 
-/** Merge built-in default networks with user-added custom networks. */
-export function mergeNetworks(defaults: Network[], custom: Network[]): Network[] {
-  return [...defaults, ...custom];
+/** Back-compat shim. Networks are now seeded directly into user storage, so
+ *  there's nothing to merge — the input list is the authoritative list. */
+export function mergeNetworks(_defaults: Network[], custom: Network[]): Network[] {
+  return [...custom];
 }
 
 /** Find a network by chainId from a list. */
@@ -16,12 +17,12 @@ export function findNetwork(networks: Network[], chainId: number): Network | und
 
 /**
  * Validate that a custom network can be added.
- * Throws if trying to overwrite a built-in network.
+ * Rejects only when the same chainId is already present — all networks live in
+ * user storage, so there is no "built-in" to protect.
  */
 export function validateCustomNetwork(allNetworks: Network[], network: Network): void {
-  const existing = allNetworks.find((n) => n.chainId === network.chainId);
-  if (existing && !existing.isCustom) {
-    throw new Error(`Chain ${network.chainId} is a built-in network`);
+  if (allNetworks.some((n) => n.chainId === network.chainId)) {
+    throw new Error(`Chain ${network.chainId} is already configured. Edit it instead.`);
   }
 }
 
@@ -54,4 +55,44 @@ export function buildViemChain(network: Network): Chain {
     nativeCurrency: { name: network.symbol, symbol: network.symbol, decimals: network.decimals },
     rpcUrls: { default: { http: [network.rpcUrl] } },
   } as Chain;
+}
+
+/**
+ * Decide which presets to seed into the user's network list.
+ *
+ * A preset is added when its chainId is BOTH:
+ *   1. not already present in the user's stored networks, and
+ *   2. not in the set of previously-seeded ids
+ * (2) lets a deleted preset stay deleted across restarts/upgrades.
+ *
+ * Returns an object suitable for writing back to storage. If no changes are
+ * needed, `changed` is false and the IO layer can skip the write.
+ */
+export function computePresetsToSeed(
+  stored: Network[],
+  seededIds: number[],
+  presets: Network[],
+): { networks: Network[]; seededIds: number[]; changed: boolean } {
+  const storedIds = new Set(stored.map((n) => n.chainId));
+  const alreadySeeded = new Set(seededIds);
+
+  const toAdd: Network[] = [];
+  for (const preset of presets) {
+    if (storedIds.has(preset.chainId)) continue;
+    if (alreadySeeded.has(preset.chainId)) continue;
+    toAdd.push({ ...preset, isCustom: true });
+  }
+
+  if (toAdd.length === 0) {
+    return { networks: stored, seededIds, changed: false };
+  }
+
+  const newSeeded = [...seededIds];
+  for (const n of toAdd) newSeeded.push(n.chainId);
+
+  return {
+    networks: [...stored, ...toAdd],
+    seededIds: newSeeded,
+    changed: true,
+  };
 }

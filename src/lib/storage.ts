@@ -23,6 +23,10 @@ export const STORAGE_KEYS = {
   ENCRYPTED_KEY: 'encrypted_private_key', // legacy single-key (migration)
   NETWORKS: 'networks',
   ACTIVE_CHAIN_ID: 'active_chain_id',
+  /** Preset chainIds we've already offered to seed. Tracking this lets a
+   *  user-deleted preset stay deleted across restarts and across upgrades that
+   *  add new presets. */
+  SEEDED_PRESET_IDS: 'seeded_preset_ids',
   WHITELIST_RULES: 'whitelist_rules',
   TOKENS: 'tokens',
   ADDRESS_BOOK: 'address_book',

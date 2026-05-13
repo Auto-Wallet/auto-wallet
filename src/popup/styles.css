@@ -268,6 +268,67 @@ body {
 
 textarea.input-field { resize: none; min-height: 72px; line-height: 1.6; }
 
+/* Fee editor: numeric input + range slider side-by-side */
+.fee-input-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.fee-input-row .fee-input-text {
+  flex: 0 0 110px;
+  width: 110px;
+}
+.fee-input-slider {
+  flex: 1;
+  -webkit-appearance: none;
+  appearance: none;
+  height: 4px;
+  background: var(--bg-input);
+  border: 1px solid var(--border-subtle);
+  border-radius: 999px;
+  outline: none;
+  padding: 0;
+  margin: 0;
+  cursor: pointer;
+}
+.fee-input-slider::-webkit-slider-runnable-track {
+  height: 4px;
+  background: transparent;
+  border-radius: 999px;
+}
+.fee-input-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 14px;
+  height: 14px;
+  margin-top: -6px;
+  border-radius: 50%;
+  background: var(--accent);
+  border: 2px solid var(--bg-card);
+  box-shadow: 0 0 0 1px var(--accent), 0 1px 3px rgba(0,0,0,.15);
+  cursor: grab;
+  transition: transform .12s ease;
+}
+.fee-input-slider::-webkit-slider-thumb:active { cursor: grabbing; transform: scale(1.1); }
+.fee-input-slider::-moz-range-track {
+  height: 4px;
+  background: transparent;
+  border-radius: 999px;
+}
+.fee-input-slider::-moz-range-thumb {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--accent);
+  border: 2px solid var(--bg-card);
+  box-shadow: 0 0 0 1px var(--accent), 0 1px 3px rgba(0,0,0,.15);
+  cursor: grab;
+}
+.fee-input-slider:focus {
+  border-color: var(--accent);
+  box-shadow: var(--shadow-glow);
+}
+
 /* Custom checkbox */
 input[type="checkbox"] {
   appearance: none;
@@ -913,6 +974,31 @@ body:has(.confirm-shell) {
   color: var(--danger);
   background: var(--danger-bg);
   border: 1px solid rgba(220,38,38,.15);
+}
+.simulation-pill.pending {
+  color: var(--text-muted);
+  background: var(--bg-input);
+  border: 1px solid var(--border-subtle);
+}
+.simulation-skeleton {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.simulation-skeleton-row {
+  height: 18px;
+  border-radius: var(--radius-sm);
+  background: linear-gradient(90deg,
+    var(--bg-input) 0%,
+    rgba(0,0,0,.04) 50%,
+    var(--bg-input) 100%);
+  background-size: 200% 100%;
+  animation: simulation-skeleton-shimmer 1.2s linear infinite;
+}
+.simulation-skeleton-row:nth-child(2) { width: 70%; }
+@keyframes simulation-skeleton-shimmer {
+  0%   { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
 }
 .simulation-list {
   display: flex;

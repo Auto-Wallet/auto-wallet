@@ -3,15 +3,15 @@
 
 import { createPublicClient, createWalletClient, http, type PublicClient, type WalletClient } from 'viem';
 import type { PrivateKeyAccount } from 'viem/accounts';
-import { type Network, DEFAULT_NETWORKS } from '../types/network';
+import { type Network, PRESET_NETWORKS } from '../types/network';
 import { getItem, setItem, STORAGE_KEYS } from './storage';
 import {
-  mergeNetworks,
   findNetwork,
   validateCustomNetwork,
   upsertCustomNetwork,
   removeFromList,
   buildViemChain,
+  computePresetsToSeed,
 } from './network-manager.core';
 
 // Re-export core functions for backward compatibility
@@ -28,18 +28,36 @@ function buildClient(network: Network): PublicClient {
 
 // --- Public API ---
 
+/**
+ * Seed missing presets into the user's network list. Safe to call repeatedly:
+ *  - presets the user already added stay untouched
+ *  - presets the user deleted are tracked in SEEDED_PRESET_IDS and don't return
+ *  - new presets shipped in an update get appended
+ */
+export async function seedPresetsIfNeeded(): Promise<void> {
+  const stored = (await getItem<Network[]>(STORAGE_KEYS.NETWORKS)) ?? [];
+  const seededIds = (await getItem<number[]>(STORAGE_KEYS.SEEDED_PRESET_IDS)) ?? [];
+  const result = computePresetsToSeed(stored, seededIds, PRESET_NETWORKS);
+  if (!result.changed) return;
+  await setItem(STORAGE_KEYS.NETWORKS, result.networks);
+  await setItem(STORAGE_KEYS.SEEDED_PRESET_IDS, result.seededIds);
+}
+
 export async function getAllNetworks(): Promise<Network[]> {
-  const custom = (await getItem<Network[]>(STORAGE_KEYS.NETWORKS)) ?? [];
-  return mergeNetworks(DEFAULT_NETWORKS, custom);
+  return (await getItem<Network[]>(STORAGE_KEYS.NETWORKS)) ?? [];
 }
 
 export async function getActiveNetwork(): Promise<Network> {
   const stored = await getItem<number>(STORAGE_KEYS.ACTIVE_CHAIN_ID);
   if (stored !== null) activeChainId = stored;
   const networks = await getAllNetworks();
-  const defaultNetwork = DEFAULT_NETWORKS[0];
-  if (!defaultNetwork) throw new Error('No default network configured');
-  return findNetwork(networks, activeChainId) ?? defaultNetwork;
+  const match = findNetwork(networks, activeChainId);
+  if (match) return match;
+  // Fallback: first stored network, then the first preset (Ethereum mainnet) if
+  // somehow the user has zero networks (e.g. all deleted).
+  const first = networks[0] ?? PRESET_NETWORKS[0];
+  if (!first) throw new Error('No networks configured');
+  return first;
 }
 
 export async function switchNetwork(chainId: number): Promise<Network> {
@@ -51,22 +69,40 @@ export async function switchNetwork(chainId: number): Promise<Network> {
   return network;
 }
 
+/** Add a brand-new network. Throws if a network with this chainId already exists. */
 export async function addCustomNetwork(network: Network): Promise<void> {
   const all = await getAllNetworks();
   validateCustomNetwork(all, network);
-  const custom = (await getItem<Network[]>(STORAGE_KEYS.NETWORKS)) ?? [];
-  const updated = upsertCustomNetwork(custom, network);
+  const updated = upsertCustomNetwork(all, network);
+  await setItem(STORAGE_KEYS.NETWORKS, updated);
+  clientCache.delete(network.chainId);
+}
+
+/** Update an existing network in place (used by the edit form). */
+export async function updateNetwork(network: Network): Promise<void> {
+  const all = await getAllNetworks();
+  if (!findNetwork(all, network.chainId)) {
+    throw new Error(`Chain ${network.chainId} not found`);
+  }
+  const updated = upsertCustomNetwork(all, network);
   await setItem(STORAGE_KEYS.NETWORKS, updated);
   clientCache.delete(network.chainId);
 }
 
 export async function removeCustomNetwork(chainId: number): Promise<void> {
-  const custom = (await getItem<Network[]>(STORAGE_KEYS.NETWORKS)) ?? [];
-  const filtered = removeFromList(custom, chainId);
+  const all = await getAllNetworks();
+  const filtered = removeFromList(all, chainId);
   await setItem(STORAGE_KEYS.NETWORKS, filtered);
   clientCache.delete(chainId);
   if (activeChainId === chainId) {
-    await switchNetwork(1); // fallback to Ethereum
+    // Pick the first remaining network if any, otherwise fall back to Ethereum.
+    const next = filtered[0]?.chainId ?? PRESET_NETWORKS[0]?.chainId ?? 1;
+    await switchNetwork(next).catch(() => {
+      // If even the fallback is gone, just record the id; getActiveNetwork
+      // handles the empty case.
+      activeChainId = next;
+      return setItem(STORAGE_KEYS.ACTIVE_CHAIN_ID, next);
+    });
   }
 }
 

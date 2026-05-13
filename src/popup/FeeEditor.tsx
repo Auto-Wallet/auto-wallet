@@ -52,6 +52,99 @@ export function gweiInputToWei(input: string): string | null {
   } catch { return null; }
 }
 
+/**
+ * Piecewise-log slider mapping for gas fees.
+ *  - slider position 0   → 0.000001 gwei
+ *  - slider position 500 → 1 gwei         (center)
+ *  - slider position 1000 → 500 gwei
+ * Each half is a uniform log10 ramp, so the user gets fine control near the
+ * common values (sub-gwei priorities) without sacrificing reach for spikes.
+ */
+const SLIDER_MIN_GWEI = 0.000001;
+const SLIDER_MID_GWEI = 1;
+const SLIDER_MAX_GWEI = 500;
+const SLIDER_STEPS = 1000;
+const SLIDER_HALF = SLIDER_STEPS / 2;
+const LOG_MIN = Math.log10(SLIDER_MIN_GWEI); // -6
+const LOG_MID = Math.log10(SLIDER_MID_GWEI); //  0
+const LOG_MAX = Math.log10(SLIDER_MAX_GWEI); // ≈ 2.699
+
+export function sliderPosToGwei(pos: number): number {
+  const clamped = Math.min(Math.max(pos, 0), SLIDER_STEPS);
+  if (clamped <= SLIDER_HALF) {
+    const t = clamped / SLIDER_HALF;
+    return Math.pow(10, LOG_MIN + t * (LOG_MID - LOG_MIN));
+  }
+  const t = (clamped - SLIDER_HALF) / SLIDER_HALF;
+  return Math.pow(10, LOG_MID + t * (LOG_MAX - LOG_MID));
+}
+
+export function gweiToSliderPos(gwei: number): number {
+  if (!Number.isFinite(gwei) || gwei <= SLIDER_MIN_GWEI) return 0;
+  if (gwei >= SLIDER_MAX_GWEI) return SLIDER_STEPS;
+  const lg = Math.log10(gwei);
+  if (gwei <= SLIDER_MID_GWEI) {
+    const t = (lg - LOG_MIN) / (LOG_MID - LOG_MIN);
+    return Math.round(t * SLIDER_HALF);
+  }
+  const t = (lg - LOG_MID) / (LOG_MAX - LOG_MID);
+  return Math.round(SLIDER_HALF + t * SLIDER_HALF);
+}
+
+/** Format a gwei value with precision proportional to its magnitude. */
+export function formatGweiForInput(v: number): string {
+  if (!Number.isFinite(v) || v <= 0) return '0';
+  let decimals: number;
+  if (v >= 100)     decimals = 2;
+  else if (v >= 10) decimals = 3;
+  else if (v >= 1)  decimals = 4;
+  else if (v >= 0.01)   decimals = 5;
+  else if (v >= 0.0001) decimals = 7;
+  else decimals = 9;
+  // Trim trailing zeros, but keep at least one digit after the dot if there is one.
+  return Number(v.toFixed(decimals)).toString();
+}
+
+function FeeInputWithSlider({
+  label,
+  value,
+  placeholder,
+  onChange,
+}: {
+  label: string;
+  value: string;
+  placeholder: string;
+  onChange: (next: string) => void;
+}) {
+  const parsed = parseFloat(value);
+  const sliderPos = Number.isFinite(parsed) ? gweiToSliderPos(parsed) : 0;
+  return (
+    <div className="confirm-field">
+      <span className="confirm-label">{label}</span>
+      <div className="fee-input-row">
+        <input
+          className="input-field fee-input-text"
+          inputMode="decimal"
+          value={value}
+          onChange={(e) => onChange(e.target.value.replace(/[^0-9.]/g, ''))}
+          placeholder={placeholder}
+        />
+        <input
+          className="fee-input-slider"
+          type="range"
+          min={0}
+          max={SLIDER_STEPS}
+          step={1}
+          value={sliderPos}
+          onChange={(e) => onChange(formatGweiForInput(sliderPosToGwei(parseFloat(e.target.value))))}
+          aria-label={label}
+          title="Log scale: midpoint = 1 gwei, ends = 0.000001 / 500 gwei"
+        />
+      </div>
+    </div>
+  );
+}
+
 export function formatEthFromWei(wei: bigint): string {
   if (wei === 0n) return '0';
   const whole = wei / ETHER;
@@ -228,40 +321,28 @@ export function FeeEditor({ request, prefill, defaultOpen = false, onChange }: F
 
           {(!fees || fees.type === 'eip1559') && (
             <>
-              <div className="confirm-field">
-                <span className="confirm-label">Max Fee Per Gas (gwei)</span>
-                <input
-                  className="input-field"
-                  inputMode="decimal"
-                  value={maxFeeInput}
-                  onChange={(e) => setMaxFeeInput(e.target.value.replace(/[^0-9.]/g, ''))}
-                  placeholder={fees?.maxFeePerGas ? weiToGweiInput(fees.maxFeePerGas) : '0'}
-                />
-              </div>
-              <div className="confirm-field">
-                <span className="confirm-label">Priority Fee (gwei)</span>
-                <input
-                  className="input-field"
-                  inputMode="decimal"
-                  value={priorityInput}
-                  onChange={(e) => setPriorityInput(e.target.value.replace(/[^0-9.]/g, ''))}
-                  placeholder={fees?.maxPriorityFeePerGas ? weiToGweiInput(fees.maxPriorityFeePerGas) : '0'}
-                />
-              </div>
+              <FeeInputWithSlider
+                label="Max Fee Per Gas (gwei)"
+                value={maxFeeInput}
+                placeholder={fees?.maxFeePerGas ? weiToGweiInput(fees.maxFeePerGas) : '0'}
+                onChange={setMaxFeeInput}
+              />
+              <FeeInputWithSlider
+                label="Priority Fee (gwei)"
+                value={priorityInput}
+                placeholder={fees?.maxPriorityFeePerGas ? weiToGweiInput(fees.maxPriorityFeePerGas) : '0'}
+                onChange={setPriorityInput}
+              />
             </>
           )}
 
           {fees?.type === 'legacy' && (
-            <div className="confirm-field">
-              <span className="confirm-label">Gas Price (gwei)</span>
-              <input
-                className="input-field"
-                inputMode="decimal"
-                value={gasPriceInput}
-                onChange={(e) => setGasPriceInput(e.target.value.replace(/[^0-9.]/g, ''))}
-                placeholder={fees?.gasPrice ? weiToGweiInput(fees.gasPrice) : '0'}
-              />
-            </div>
+            <FeeInputWithSlider
+              label="Gas Price (gwei)"
+              value={gasPriceInput}
+              placeholder={fees?.gasPrice ? weiToGweiInput(fees.gasPrice) : '0'}
+              onChange={setGasPriceInput}
+            />
           )}
         </div>
       )}

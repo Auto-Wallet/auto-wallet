@@ -68,22 +68,64 @@ export interface ConfirmRequest {
   chainName?: string;
   ledger?: LedgerConfirmContext;
   simulation?: SimulationPreview;
+  /** True when simulation is still running; popup should render a skeleton until
+   *  the result lands at `confirm_${id}_simulation` in session storage. */
+  simulationPending?: boolean;
+}
+
+export interface RequestUserConfirmationOptions {
+  /** When provided, the popup opens immediately without waiting; the resolved
+   *  simulation is persisted to `confirm_${id}_simulation` for the popup to
+   *  pick up via chrome.storage.onChanged. */
+  simulationPromise?: Promise<SimulationPreview>;
+}
+
+function simulationKey(id: string): string {
+  return `confirm_${id}_simulation`;
+}
+
+async function cleanupRequest(id: string): Promise<void> {
+  await chrome.storage.session.remove([`confirm_${id}`, simulationKey(id)]);
 }
 
 /** Open a confirmation popup and wait for user to approve or reject. */
-export function requestUserConfirmation(request: ConfirmRequest): Promise<ConfirmResult> {
+export function requestUserConfirmation(
+  request: ConfirmRequest,
+  options?: RequestUserConfirmationOptions,
+): Promise<ConfirmResult> {
   return new Promise(async (resolve) => {
     pendingConfirmations.set(request.id, { id: request.id, resolve });
 
+    const storedRequest: ConfirmRequest = options?.simulationPromise
+      ? { ...request, simulationPending: true, simulation: undefined }
+      : request;
+
     // Store request data in session storage instead of URL query string
     // to avoid URL length limits with large calldata
-    await chrome.storage.session.set({ [`confirm_${request.id}`]: request });
+    await chrome.storage.session.set({ [`confirm_${request.id}`]: storedRequest });
+
+    // Push the simulation result asynchronously once it resolves. Don't fail the
+    // confirm flow if the API errors — simulateTx already converts errors into
+    // a SimulationPreview with status='unavailable'.
+    if (options?.simulationPromise) {
+      options.simulationPromise
+        .then((simulation) => chrome.storage.session.set({ [simulationKey(request.id)]: simulation }))
+        .catch(() => {
+          chrome.storage.session.set({
+            [simulationKey(request.id)]: {
+              status: 'unavailable',
+              error: 'Simulation failed unexpectedly.',
+              changes: [],
+            } satisfies SimulationPreview,
+          });
+        });
+    }
 
     const url = chrome.runtime.getURL(`confirm.html?id=${request.id}`);
 
     const window = await createPopupWindow(url, 360, 740);
     if (!window) {
-      await chrome.storage.session.remove(`confirm_${request.id}`);
+      await cleanupRequest(request.id);
       pendingConfirmations.delete(request.id);
       resolve({ approved: false });
       return;
@@ -92,7 +134,7 @@ export function requestUserConfirmation(request: ConfirmRequest): Promise<Confir
     const onRemoved = (windowId: number) => {
       if (windowId === window.id) {
         chrome.windows.onRemoved.removeListener(onRemoved);
-        chrome.storage.session.remove(`confirm_${request.id}`);
+        cleanupRequest(request.id);
         const pending = pendingConfirmations.get(request.id);
         if (pending) {
           pendingConfirmations.delete(request.id);
@@ -112,7 +154,7 @@ chrome.runtime.onMessage.addListener((message) => {
   const pending = pendingConfirmations.get(message.requestId);
   if (pending) {
     pendingConfirmations.delete(message.requestId);
-    chrome.storage.session.remove(`confirm_${message.requestId}`);
+    cleanupRequest(message.requestId);
     pending.resolve({
       approved: message.approved === true,
       feeOverride: message.feeOverride ?? null,

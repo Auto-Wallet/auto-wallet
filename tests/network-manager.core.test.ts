@@ -6,6 +6,7 @@ import {
   upsertCustomNetwork,
   removeFromList,
   buildViemChain,
+  computePresetsToSeed,
 } from '../src/lib/network-manager.core';
 import type { Network } from '../src/types/network';
 
@@ -42,27 +43,11 @@ const customNet: Network = {
 // mergeNetworks
 // =============================================================
 
-describe('mergeNetworks', () => {
-  test('combines defaults and custom, defaults first', () => {
+describe('mergeNetworks (back-compat shim)', () => {
+  test('returns the custom list verbatim — defaults are now seeded into storage', () => {
     const result = mergeNetworks([ethereum], [customNet]);
-    expect(result).toHaveLength(2);
-    expect(result[0]!.chainId).toBe(1);
-    expect(result[1]!.chainId).toBe(999);
-  });
-
-  test('empty custom → only defaults', () => {
-    const result = mergeNetworks([ethereum, polygon], []);
-    expect(result).toHaveLength(2);
-  });
-
-  test('empty defaults → only custom', () => {
-    const result = mergeNetworks([], [customNet]);
     expect(result).toHaveLength(1);
-    expect(result[0]!.name).toBe('TestNet');
-  });
-
-  test('both empty → empty', () => {
-    expect(mergeNetworks([], [])).toHaveLength(0);
+    expect(result[0]!.chainId).toBe(999);
   });
 });
 
@@ -91,19 +76,71 @@ describe('findNetwork', () => {
 // =============================================================
 
 describe('validateCustomNetwork', () => {
-  test('adding new custom network → no throw', () => {
+  test('adding new network with unique chainId → no throw', () => {
     expect(() => validateCustomNetwork([ethereum], customNet)).not.toThrow();
   });
 
-  test('overwriting existing custom network → no throw', () => {
-    const existing = { ...customNet };
-    const updated = { ...customNet, rpcUrl: 'https://new-rpc.example' };
-    expect(() => validateCustomNetwork([ethereum, existing], updated)).not.toThrow();
+  test('duplicate chainId → throws (caller should call updateNetwork instead)', () => {
+    expect(() => validateCustomNetwork([ethereum, customNet], customNet)).toThrow(/already configured/);
   });
 
-  test('overwriting built-in network → throws', () => {
+  test('duplicate chainId of a seeded preset → throws', () => {
     const fake = { ...ethereum, rpcUrl: 'https://evil.com' };
-    expect(() => validateCustomNetwork([ethereum], fake)).toThrow('built-in network');
+    expect(() => validateCustomNetwork([ethereum], fake)).toThrow(/already configured/);
+  });
+});
+
+// =============================================================
+// computePresetsToSeed
+// =============================================================
+
+describe('computePresetsToSeed', () => {
+  test('fresh install: seeds all presets and records their ids', () => {
+    const result = computePresetsToSeed([], [], [ethereum, polygon]);
+    expect(result.changed).toBe(true);
+    expect(result.networks).toHaveLength(2);
+    expect(result.seededIds).toEqual([1, 137]);
+    // Seeded entries are flagged as custom so the UI treats them uniformly.
+    expect(result.networks[0]!.isCustom).toBe(true);
+    expect(result.networks[1]!.isCustom).toBe(true);
+  });
+
+  test('user already added the same chainId → keep theirs, mark as seeded', () => {
+    const userEth: Network = { ...ethereum, rpcUrl: 'https://user-picked.example' };
+    const result = computePresetsToSeed([userEth], [], [ethereum, polygon]);
+    expect(result.changed).toBe(true);
+    expect(result.networks).toHaveLength(2);
+    // user's entry untouched
+    const eth = result.networks.find((n) => n.chainId === 1)!;
+    expect(eth.rpcUrl).toBe('https://user-picked.example');
+    // polygon gets seeded
+    expect(result.networks.find((n) => n.chainId === 137)?.isCustom).toBe(true);
+    // Only polygon (137) was newly added; 1 was not, but we are NOT marking
+    // pre-existing chainIds as seeded since the user's own copy is what's
+    // serving them. (Tracking those wouldn't change behavior either.)
+    expect(result.seededIds).toEqual([137]);
+  });
+
+  test('previously-seeded but deleted preset → does NOT come back', () => {
+    // User deleted Ethereum after install; SEEDED_PRESET_IDS records id 1.
+    const result = computePresetsToSeed([polygon], [1, 137], [ethereum, polygon]);
+    expect(result.changed).toBe(false);
+    expect(result.networks).toEqual([polygon]);
+    expect(result.seededIds).toEqual([1, 137]);
+  });
+
+  test('upgrade adding new preset → appends, leaves the rest alone', () => {
+    const newChain: Network = { chainId: 42, name: 'New', rpcUrl: 'r', symbol: 'X', decimals: 18 };
+    const result = computePresetsToSeed([ethereum, polygon], [1, 137], [ethereum, polygon, newChain]);
+    expect(result.changed).toBe(true);
+    expect(result.networks).toHaveLength(3);
+    expect(result.networks[2]!.chainId).toBe(42);
+    expect(result.seededIds).toEqual([1, 137, 42]);
+  });
+
+  test('no-op when everything is already seeded or stored', () => {
+    const result = computePresetsToSeed([ethereum, polygon], [1, 137], [ethereum, polygon]);
+    expect(result.changed).toBe(false);
   });
 });
 

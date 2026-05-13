@@ -60,4 +60,16 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 // Service worker install
 chrome.runtime.onInstalled.addListener(() => {
   console.log('[Auto-Wallet] Extension installed');
+  // Seed preset networks on install/update so new chainIds shipped in a
+  // release show up without a fresh-install reset.
+  networkManager.seedPresetsIfNeeded().catch((err) => {
+    console.warn('[Auto-Wallet] Failed to seed preset networks:', err);
+  });
+});
+
+// MV3 service workers can be started for many reasons (alarms, messages, etc.)
+// Seed on every cold start as well — the function is a no-op when nothing new
+// needs to be added.
+networkManager.seedPresetsIfNeeded().catch((err) => {
+  console.warn('[Auto-Wallet] Failed to seed preset networks:', err);
 });

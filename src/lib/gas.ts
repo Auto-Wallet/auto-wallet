@@ -3,3 +3,27 @@
 export function bufferGas(gas: bigint): bigint {
   return (gas * 12n) / 10n;
 }
+
+// Some RPCs return a zero (or near-zero) priorityFee estimate, which can cause
+// txs to sit unmined on busy chains. Floor every auto-estimate at 10000 wei.
+// User-supplied overrides go through unchanged.
+export const MIN_PRIORITY_FEE_WEI = 10_000n;
+
+export function floorPriorityFee(priority: bigint | null | undefined): bigint {
+  if (priority === null || priority === undefined) return MIN_PRIORITY_FEE_WEI;
+  return priority < MIN_PRIORITY_FEE_WEI ? MIN_PRIORITY_FEE_WEI : priority;
+}
+
+/** Bump priority to the floor, and raise maxFeePerGas by the same delta so the
+ *  baseFee + priority headroom is preserved. */
+export function clampEstimatedFees(fees: {
+  maxFeePerGas: bigint;
+  maxPriorityFeePerGas: bigint;
+}): { maxFeePerGas: bigint; maxPriorityFeePerGas: bigint } {
+  if (fees.maxPriorityFeePerGas >= MIN_PRIORITY_FEE_WEI) return fees;
+  const delta = MIN_PRIORITY_FEE_WEI - fees.maxPriorityFeePerGas;
+  return {
+    maxPriorityFeePerGas: MIN_PRIORITY_FEE_WEI,
+    maxFeePerGas: fees.maxFeePerGas + delta,
+  };
+}

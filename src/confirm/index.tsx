@@ -20,8 +20,8 @@ import {
   type TransactionSerializable,
 } from 'viem';
 import { callBackground } from '../popup/api';
-import { DEFAULT_NETWORKS, type Network } from '../types/network';
-import { findNetwork, mergeNetworks } from '../lib/network-manager.core';
+import type { Network } from '../types/network';
+import { findNetwork } from '../lib/network-manager.core';
 import { STORAGE_KEYS } from '../lib/storage';
 import '../popup/styles.css';
 
@@ -74,6 +74,7 @@ interface PendingRequest {
   chainName?: string;
   ledger?: LedgerCtx;
   simulation?: SimulationPreview;
+  simulationPending?: boolean;
 }
 
 function prettyTypedData(value: unknown): string {
@@ -95,8 +96,8 @@ function shortAddress(value?: string): string {
 
 function resolveStoredChainName(chainId: number, callback: (name: string | undefined) => void): void {
   chrome.storage.local.get(STORAGE_KEYS.NETWORKS, (result) => {
-    const custom = (result[STORAGE_KEYS.NETWORKS] as Network[] | undefined) ?? [];
-    callback(findNetwork(mergeNetworks(DEFAULT_NETWORKS, custom), chainId)?.name);
+    const stored = (result[STORAGE_KEYS.NETWORKS] as Network[] | undefined) ?? [];
+    callback(findNetwork(stored, chainId)?.name);
   });
 }
 
@@ -119,8 +120,32 @@ function parseApprovalDetails(tx: any): ApprovalDetails | null {
   }
 }
 
-function SimulationChanges({ simulation }: { simulation?: SimulationPreview }) {
-  if (!simulation) return null;
+function SimulationSkeleton() {
+  return (
+    <div className="card" style={{ padding: 12 }}>
+      <div className="confirm-row" style={{ alignItems: 'center', marginBottom: 8 }}>
+        <span className="confirm-label" style={{ marginBottom: 0 }}>Simulated Token Changes</span>
+        <span className="simulation-pill pending">Simulating…</span>
+      </div>
+      <div className="simulation-skeleton">
+        <div className="simulation-skeleton-row" />
+        <div className="simulation-skeleton-row" />
+      </div>
+    </div>
+  );
+}
+
+function SimulationChanges({
+  simulation,
+  pending,
+}: {
+  simulation?: SimulationPreview;
+  pending?: boolean;
+}) {
+  if (!simulation) {
+    if (pending) return <SimulationSkeleton />;
+    return null;
+  }
 
   if (simulation.status === 'unavailable') {
     return (
@@ -192,19 +217,43 @@ function ConfirmPage() {
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const requestId = params.get('id');
-    if (requestId) {
-      const key = `confirm_${requestId}`;
-      chrome.storage.session.get(key, (result) => {
-        const stored = result[key] as PendingRequest | undefined;
-        if (!stored) return;
-        setRequest(stored);
-        if (stored.chainId && !stored.chainName) {
-          resolveStoredChainName(stored.chainId, (chainName) => {
-            if (chainName) setRequest((current) => current ? { ...current, chainName } : current);
-          });
-        }
-      });
-    }
+    if (!requestId) return;
+
+    const requestKey = `confirm_${requestId}`;
+    const simulationKey = `confirm_${requestId}_simulation`;
+
+    // Initial read — request + any already-resolved simulation
+    chrome.storage.session.get([requestKey, simulationKey], (result) => {
+      const stored = result[requestKey] as PendingRequest | undefined;
+      if (!stored) return;
+      const earlySim = result[simulationKey] as SimulationPreview | undefined;
+      const initial: PendingRequest = earlySim
+        ? { ...stored, simulation: earlySim, simulationPending: false }
+        : stored;
+      setRequest(initial);
+      if (initial.chainId && !initial.chainName) {
+        resolveStoredChainName(initial.chainId, (chainName) => {
+          if (chainName) setRequest((current) => current ? { ...current, chainName } : current);
+        });
+      }
+    });
+
+    // Listen for simulation result arriving after the popup is open
+    const onStorageChange = (
+      changes: { [key: string]: chrome.storage.StorageChange },
+      areaName: string,
+    ) => {
+      if (areaName !== 'session') return;
+      const change = changes[simulationKey];
+      if (!change) return;
+      const simulation = change.newValue as SimulationPreview | undefined;
+      if (!simulation) return;
+      setRequest((current) =>
+        current ? { ...current, simulation, simulationPending: false } : current,
+      );
+    };
+    chrome.storage.onChanged.addListener(onStorageChange);
+    return () => chrome.storage.onChanged.removeListener(onStorageChange);
   }, []);
 
   useEffect(() => {
@@ -571,7 +620,12 @@ function ConfirmPage() {
           </div>
         )}
 
-        {isTransaction && <SimulationChanges simulation={request.simulation} />}
+        {isTransaction && (
+          <SimulationChanges
+            simulation={request.simulation}
+            pending={request.simulationPending}
+          />
+        )}
 
         {/* Fee editor */}
         {feeRequest && (

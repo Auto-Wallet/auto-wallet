@@ -24,7 +24,7 @@ import { notifyTx, notifySign } from '../lib/notify';
 import { emitChainChanged } from './events';
 import { RpcError, userRejection } from '../lib/rpc-error';
 import { validateSigner, validateRpcUrl, parseAddChainParams, parseTxParams } from '../lib/rpc-validation';
-import { bufferGas } from '../lib/gas';
+import { bufferGas, clampEstimatedFees } from '../lib/gas';
 import { simulateTx, type SimulationPreview } from './bcs-simulation';
 import { preparePersonalSignParams, signPreparedPersonalMessage } from '../lib/signing';
 import { retryWithNextNonce } from '../lib/nonce';
@@ -195,7 +195,7 @@ async function checkWhitelistOrConfirm(
   ctx: { to: string | null; data: string | null; value: string; gasLimit: string | null; chainId: number },
   signerAddress: string,
   ledger?: LedgerConfirmContext,
-  simulation?: SimulationPreview,
+  simulationPromise?: Promise<SimulationPreview>,
   chainName?: string,
 ): Promise<{
   autoSignResult: whitelist.AutoSignCheckResult;
@@ -220,17 +220,19 @@ async function checkWhitelistOrConfirm(
     return { autoSignResult, feeOverride: null, txDataOverride: null, signedRawTx: null, signature: null };
   }
 
-  const { approved, feeOverride, txDataOverride, signedRawTx, signature } = await requestUserConfirmation({
-    id: genId(),
-    method,
-    origin,
-    params,
-    signerAddress,
-    chainId: ctx.chainId,
-    chainName,
-    ledger,
-    simulation,
-  });
+  const { approved, feeOverride, txDataOverride, signedRawTx, signature } = await requestUserConfirmation(
+    {
+      id: genId(),
+      method,
+      origin,
+      params,
+      signerAddress,
+      chainId: ctx.chainId,
+      chainName,
+      ledger,
+    },
+    simulationPromise ? { simulationPromise } : undefined,
+  );
   if (!approved) {
     throw userRejection('User rejected the request');
   }
@@ -288,9 +290,13 @@ async function buildLedgerTxJson(args: BuildLedgerTxArgs): Promise<SerializedTxJ
       const block = await publicClient.getBlock({ blockTag: 'latest' });
       if (block.baseFeePerGas !== null && block.baseFeePerGas !== undefined) {
         const fees = await publicClient.estimateFeesPerGas();
+        const clamped = clampEstimatedFees({
+          maxFeePerGas: fees.maxFeePerGas!,
+          maxPriorityFeePerGas: fees.maxPriorityFeePerGas!,
+        });
         type = 'eip1559';
-        maxFeePerGas = fees.maxFeePerGas!;
-        maxPriorityFeePerGas = fees.maxPriorityFeePerGas!;
+        maxFeePerGas = clamped.maxFeePerGas;
+        maxPriorityFeePerGas = clamped.maxPriorityFeePerGas;
       } else {
         type = 'legacy';
         gasPrice = await publicClient.getGasPrice();
@@ -354,7 +360,10 @@ async function handleSendTransaction(params: unknown[], origin: string): Promise
     };
   }
 
-  const simulation = await simulateTx({
+  // Kick off simulation in parallel so the confirm popup can open immediately.
+  // The popup picks up the resolved result via session storage; on the auto-sign
+  // path the promise is simply discarded.
+  const simulationPromise = simulateTx({
     chainId,
     from: signerAddress,
     to: parsed.to,
@@ -377,7 +386,7 @@ async function handleSendTransaction(params: unknown[], origin: string): Promise
     },
     signerAddress,
     ledgerCtx,
-    simulation,
+    simulationPromise,
     network.name,
   );
 

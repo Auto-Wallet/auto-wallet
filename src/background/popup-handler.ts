@@ -16,7 +16,7 @@ import type { Network } from '../types/network';
 import { type WalletSettings, DEFAULT_SETTINGS } from '../types/settings';
 import { emitAccountsChanged, emitChainChanged } from './events';
 import { toHex } from 'viem';
-import { bufferGas } from '../lib/gas';
+import { bufferGas, clampEstimatedFees } from '../lib/gas';
 import { notifyTx } from '../lib/notify';
 import { retryWithNextNonce } from '../lib/nonce';
 import { openLedgerPickerWindow } from './ledger-picker-manager';
@@ -240,6 +240,8 @@ export async function handlePopupAction(action: string, payload: any): Promise<u
     }
     case 'addCustomNetwork':
       return networkManager.addCustomNetwork(payload as Network);
+    case 'updateNetwork':
+      return networkManager.updateNetwork(payload as Network);
     case 'removeCustomNetwork':
       return networkManager.removeCustomNetwork(payload.chainId);
 
@@ -403,8 +405,17 @@ async function getFeeSuggestions(req: FeeSuggestionsRequest): Promise<FeeSuggest
       baseFee = block.baseFeePerGas;
       type = 'eip1559';
       const fees = await client.estimateFeesPerGas();
-      maxFee = fees.maxFeePerGas ?? null;
-      priority = fees.maxPriorityFeePerGas ?? null;
+      if (fees.maxFeePerGas !== undefined && fees.maxPriorityFeePerGas !== undefined) {
+        const clamped = clampEstimatedFees({
+          maxFeePerGas: fees.maxFeePerGas,
+          maxPriorityFeePerGas: fees.maxPriorityFeePerGas,
+        });
+        maxFee = clamped.maxFeePerGas;
+        priority = clamped.maxPriorityFeePerGas;
+      } else {
+        maxFee = fees.maxFeePerGas ?? null;
+        priority = fees.maxPriorityFeePerGas ?? null;
+      }
     }
   } catch {
     // ignore — fall through to legacy
@@ -527,9 +538,13 @@ async function prepareLedgerSendTx(args: LedgerPrepArgs): Promise<{ unsignedHex:
       const block = await publicClient.getBlock({ blockTag: 'latest' });
       if (block.baseFeePerGas !== null && block.baseFeePerGas !== undefined) {
         const fees = await publicClient.estimateFeesPerGas();
+        const clamped = clampEstimatedFees({
+          maxFeePerGas: fees.maxFeePerGas!,
+          maxPriorityFeePerGas: fees.maxPriorityFeePerGas!,
+        });
         type = 'eip1559';
-        maxFeePerGas = fees.maxFeePerGas!;
-        maxPriorityFeePerGas = fees.maxPriorityFeePerGas!;
+        maxFeePerGas = clamped.maxFeePerGas;
+        maxPriorityFeePerGas = clamped.maxPriorityFeePerGas;
       } else {
         type = 'legacy';
         gasPrice = await publicClient.getGasPrice();
