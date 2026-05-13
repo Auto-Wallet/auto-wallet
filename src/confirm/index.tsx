@@ -186,6 +186,8 @@ function ConfirmPage() {
   const [approvalInfo, setApprovalInfo] = useState<ApprovalTokenInfo | null>(null);
   const [approvalAmount, setApprovalAmount] = useState('');
   const [approvalError, setApprovalError] = useState('');
+  const [showJson, setShowJson] = useState(false);
+  const [jsonCopied, setJsonCopied] = useState(false);
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -458,14 +460,22 @@ function ConfirmPage() {
           </div>
         )}
 
-        {/* Method badge */}
-        <div style={{ textAlign: 'center', marginBottom: 4 }}>
+        {/* Method badge + JSON inspector trigger */}
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, marginBottom: 4 }}>
           <span className="badge" style={{
             background: 'var(--accent-subtle)', color: 'var(--accent)',
             border: '1px solid rgba(79,70,229,.15)', fontSize: 11, padding: '4px 12px',
           }}>
             {request.method}
           </span>
+          <button
+            type="button"
+            onClick={() => { setShowJson(true); setJsonCopied(false); }}
+            className="json-inspector-btn"
+            title="Show full request as JSON (copy for AI analysis)"
+          >
+            {'{ }'} JSON
+          </button>
         </div>
 
         {/* Transaction details */}
@@ -668,6 +678,113 @@ function ConfirmPage() {
           {busy ? 'Signing…' : 'Approve'}
         </button>
       </footer>
+
+      {showJson && (
+        <JsonInspector
+          request={request}
+          approvalDetails={approvalDetails}
+          approvalInfo={approvalInfo}
+          feeOverride={feeOverride}
+          copied={jsonCopied}
+          onCopy={async (text) => {
+            try {
+              await navigator.clipboard.writeText(text);
+              setJsonCopied(true);
+              setTimeout(() => setJsonCopied(false), 1800);
+            } catch {
+              // Clipboard API can fail in some contexts; do nothing — the user
+              // can still select the text manually.
+            }
+          }}
+          onClose={() => setShowJson(false)}
+        />
+      )}
+    </div>
+  );
+}
+
+function buildInspectorPayload(
+  request: PendingRequest,
+  approvalDetails: ApprovalDetails | null,
+  approvalInfo: ApprovalTokenInfo | null,
+  feeOverride: FeeOverride | null,
+): Record<string, unknown> {
+  return {
+    method: request.method,
+    origin: request.origin,
+    signerAddress: request.signerAddress,
+    chainId: request.chainId,
+    chainName: request.chainName,
+    params: request.params,
+    simulation: request.simulation,
+    ledger: request.ledger
+      ? {
+          derivationPath: request.ledger.derivationPath,
+          // Tx body & message hashes — show structure but no private data.
+          txJson: request.ledger.txJson,
+          messageHex: request.ledger.messageHex,
+          domainSeparator: request.ledger.domainSeparator,
+          hashStructMessage: request.ledger.hashStructMessage,
+        }
+      : undefined,
+    feeOverride,
+    decodedApprove: approvalDetails
+      ? {
+          tokenAddress: approvalDetails.tokenAddress,
+          spender: approvalDetails.spender,
+          amountRaw: approvalDetails.amountRaw.toString(),
+          tokenSymbol: approvalInfo?.symbol,
+          tokenDecimals: approvalInfo?.decimals,
+          tokenName: approvalInfo?.name,
+          ownerBalanceRaw: approvalInfo?.balanceRaw,
+          ownerBalance: approvalInfo?.balance,
+        }
+      : undefined,
+    capturedAt: new Date().toISOString(),
+  };
+}
+
+function JsonInspector({
+  request,
+  approvalDetails,
+  approvalInfo,
+  feeOverride,
+  copied,
+  onCopy,
+  onClose,
+}: {
+  request: PendingRequest;
+  approvalDetails: ApprovalDetails | null;
+  approvalInfo: ApprovalTokenInfo | null;
+  feeOverride: FeeOverride | null;
+  copied: boolean;
+  onCopy: (text: string) => void;
+  onClose: () => void;
+}): React.ReactElement {
+  const payload = buildInspectorPayload(request, approvalDetails, approvalInfo, feeOverride);
+  const text = JSON.stringify(payload, null, 2);
+  return (
+    <div className="json-inspector-overlay" onClick={onClose}>
+      <div className="json-inspector-panel" onClick={(e) => e.stopPropagation()}>
+        <header className="json-inspector-header">
+          <div>
+            <div className="json-inspector-title">Request JSON</div>
+            <div className="json-inspector-subtitle">Copy this and paste into your AI assistant for analysis.</div>
+          </div>
+          <button type="button" className="btn-secondary json-inspector-close" onClick={onClose}>Close</button>
+        </header>
+        <pre className="json-inspector-body mono">{text}</pre>
+        <footer className="json-inspector-footer">
+          <button
+            type="button"
+            className="btn-primary"
+            onClick={() => onCopy(text)}
+            style={{ minWidth: 120 }}
+          >
+            {copied ? 'Copied ✓' : 'Copy JSON'}
+          </button>
+        </footer>
+      </div>
     </div>
   );
 }
