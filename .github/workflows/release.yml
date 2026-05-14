@@ -9,7 +9,30 @@ permissions:
   contents: write
 
 jobs:
+  verify-on-main:
+    runs-on: ubuntu-latest
+    outputs:
+      on_main: ${{ steps.check.outputs.on_main }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Check tag is on main
+        id: check
+        run: |
+          git fetch origin main:refs/remotes/origin/main
+          if git merge-base --is-ancestor "$GITHUB_SHA" refs/remotes/origin/main; then
+            echo "on_main=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "on_main=false" >> "$GITHUB_OUTPUT"
+            echo "::warning::Tag $GITHUB_REF_NAME ($GITHUB_SHA) is not reachable from main; skipping release."
+          fi
+
   build-and-release:
+    needs: verify-on-main
+    if: needs.verify-on-main.outputs.on_main == 'true'
     runs-on: ubuntu-latest
 
     steps:
