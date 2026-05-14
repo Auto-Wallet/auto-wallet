@@ -6,8 +6,8 @@ import type { EncryptedData } from './crypto';
 
 // --- Types (shared with key-manager.ts IO layer) ---
 
-export type AccountType = 'private' | 'ledger';
-export type AccountSource = 'privateKey' | 'mnemonic' | 'ledger';
+export type AccountType = 'private' | 'ledger' | 'watchOnly';
+export type AccountSource = 'privateKey' | 'mnemonic' | 'ledger' | 'watchOnly';
 
 export interface StoredAccount {
   id: string;
@@ -48,12 +48,39 @@ export function accountType(stored: StoredAccount): AccountType {
 }
 
 export function accountSource(stored: StoredAccount): AccountSource {
-  if (accountType(stored) === 'ledger') return 'ledger';
+  const t = accountType(stored);
+  if (t === 'ledger') return 'ledger';
+  if (t === 'watchOnly') return 'watchOnly';
   return stored.source ?? 'privateKey';
 }
 
 export function isLedger(stored: StoredAccount): boolean {
   return accountType(stored) === 'ledger';
+}
+
+export function isWatchOnly(stored: StoredAccount): boolean {
+  return accountType(stored) === 'watchOnly';
+}
+
+/** Watch-only accounts hold no signing material and can never produce signatures. */
+export function canSign(stored: StoredAccount): boolean {
+  return !isWatchOnly(stored);
+}
+
+/**
+ * Order accounts for display: signing accounts in their original order first,
+ * watch-only accounts grouped at the bottom (preserving relative order).
+ */
+export function partitionAccountsForDisplay<T extends { type?: AccountType }>(
+  accounts: T[],
+): { signers: T[]; watchOnly: T[] } {
+  const signers: T[] = [];
+  const watchOnly: T[] = [];
+  for (const a of accounts) {
+    if (a.type === 'watchOnly') watchOnly.push(a);
+    else signers.push(a);
+  }
+  return { signers, watchOnly };
 }
 
 /**

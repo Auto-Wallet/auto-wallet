@@ -13,6 +13,19 @@ export function AccountBadge({
     return <LedgerBadge size={size} title="Ledger hardware wallet" />;
   }
 
+  if (source === 'watchOnly') {
+    return (
+      <span className="account-type-badge watch-only" title="Watch-only address (read only)" aria-label="Watch-only address">
+        <svg width={size} height={size} viewBox="0 0 24 24" aria-hidden>
+          <g fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="2">
+            <path d="M2.062 12.348a1 1 0 0 1 0-.696a10.75 10.75 0 0 1 19.876 0a1 1 0 0 1 0 .696a10.75 10.75 0 0 1-19.876 0" />
+            <circle cx="12" cy="12" r="3" fill="currentColor" stroke="none" />
+          </g>
+        </svg>
+      </span>
+    );
+  }
+
   if (source === 'mnemonic') {
     return (
       <span className="account-type-badge mnemonic" title="Mnemonic account" aria-label="Mnemonic account">

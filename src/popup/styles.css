@@ -844,49 +844,6 @@ input[type="checkbox"]:checked::after {
   border-radius: var(--radius-pill);
   padding: 1px 5px;
 }
-.address-book-card {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 10px;
-  padding: 10px 12px;
-  background: var(--bg-card);
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-md);
-  box-shadow: var(--shadow-xs);
-}
-.address-book-name {
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--text-primary);
-  max-width: 180px;
-}
-.address-book-address {
-  font-size: 10px;
-  color: var(--text-muted);
-}
-.address-book-address-btn {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  background: transparent;
-  border: none;
-  padding: 2px 0;
-  margin-top: 1px;
-  font-size: 10px;
-  color: var(--text-muted);
-  cursor: pointer;
-  transition: color .12s ease;
-}
-.address-book-address-btn:hover { color: var(--accent); }
-.address-book-address-btn .copy-icon {
-  opacity: .6;
-  flex-shrink: 0;
-  transition: opacity .12s ease, stroke .12s ease;
-}
-.address-book-address-btn:hover .copy-icon { opacity: 1; stroke: var(--accent); }
-.address-book-address-btn .copy-icon-success { stroke: var(--success); opacity: 1; }
-
 /* Token icon */
 .token-icon-img {
   border-radius: 50%;
@@ -1519,6 +1476,30 @@ body:has(.confirm-shell) {
   text-align: center;
 }
 
+.account-menu-group-divider {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 4px 4px;
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.account-menu-group-divider::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: var(--border-subtle);
+}
+.account-menu-item.watch-only {
+  opacity: 0.95;
+}
+.account-menu-item.watch-only .account-menu-item-addr {
+  font-style: italic;
+}
+
 .account-menu-item {
   display: flex;
   align-items: center;
@@ -1645,6 +1626,29 @@ body:has(.confirm-shell) {
 .account-type-badge.mnemonic {
   background: rgba(16,185,129,.12);
   color: #047857;
+}
+.account-type-badge.watch-only {
+  background: rgba(240,100,73,.12);
+  color: var(--coral);
+}
+[data-theme="dark"] .account-type-badge.watch-only {
+  background: rgba(251,113,133,.18);
+}
+
+.watch-only-banner {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  background: var(--coral-subtle);
+  color: var(--coral);
+  border: 1px solid rgba(240,100,73,.2);
+  border-radius: var(--radius-md);
+  font-size: 12px;
+  font-weight: 500;
+}
+.watch-only-banner .account-type-badge {
+  margin-right: 0;
 }
 .account-type-badge svg { display: block; }
 .account-trigger-label .ledger-badge,

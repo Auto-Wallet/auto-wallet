@@ -1,14 +1,14 @@
 import React, { useState, useEffect } from 'react';
 import { callBackground } from '../api';
 import type { WalletSettings, ThemePreference } from '../../types/settings';
-import type { AccountSource } from '../../lib/key-manager.core';
+import type { AccountSource, AccountType } from '../../lib/key-manager.core';
 import { SunIcon, MoonIcon, MonitorIcon } from '../icons';
 
 interface AccountInfo {
   id: string;
   label: string;
   address: string;
-  type: 'private' | 'ledger';
+  type: AccountType;
   source: AccountSource;
   derivationPath?: string;
 }

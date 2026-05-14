@@ -73,3 +73,9 @@ chrome.runtime.onInstalled.addListener(() => {
 networkManager.seedPresetsIfNeeded().catch((err) => {
   console.warn('[Auto-Wallet] Failed to seed preset networks:', err);
 });
+
+// One-time migration of the legacy Address Book into watch-only accounts.
+// Idempotent — runs whenever the SW wakes up, then the storage key is gone.
+keyManager.migrateAddressBookToWatchOnlyOnce().catch((err) => {
+  console.warn('[Auto-Wallet] Failed to migrate address book:', err);
+});

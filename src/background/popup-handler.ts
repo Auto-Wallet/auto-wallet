@@ -3,7 +3,6 @@ import * as networkManager from '../lib/network-manager';
 import * as whitelist from '../lib/whitelist';
 import * as tokenManager from '../lib/token-manager';
 import * as txLogger from '../lib/tx-logger';
-import * as addressBook from '../lib/address-book';
 import { getClient } from '../lib/network-manager';
 import { handleRpcMethod } from './rpc-handler';
 import { getMulticall3Address } from '../lib/multicall';
@@ -87,6 +86,11 @@ export async function handlePopupAction(action: string, payload: any): Promise<u
       emitAccountsChanged([addr]);
       return addr;
     }
+    case 'addWatchOnlyAccount': {
+      const addr = await keyManager.addWatchOnlyAccount(payload.address, payload.label);
+      emitAccountsChanged([addr]);
+      return addr;
+    }
 
     // --- Ledger ---
     case 'setupLedgerWallet': {
@@ -131,6 +135,7 @@ export async function handlePopupAction(action: string, payload: any): Promise<u
 
     // --- Send native token ---
     case 'sendNative': {
+      await assertActiveCanSign();
       const account = await keyManager.getAccount();
       const network = await networkManager.getActiveNetwork();
       const publicClient = await getClient(network.chainId);
@@ -178,6 +183,7 @@ export async function handlePopupAction(action: string, payload: any): Promise<u
 
     // --- Send ERC-20 token ---
     case 'sendToken': {
+      await assertActiveCanSign();
       const account = await keyManager.getAccount();
       const network = await networkManager.getActiveNetwork();
       const publicClient = await getClient(network.chainId);
@@ -291,14 +297,6 @@ export async function handlePopupAction(action: string, payload: any): Promise<u
         balance: formatUnits(rawBalance as bigint, normalizedDecimals),
       };
     }
-
-    // --- Address book ---
-    case 'getAddressBook':
-      return addressBook.getAddressBook();
-    case 'addAddressBookEntry':
-      return addressBook.addAddressBookEntry(payload.name, payload.address);
-    case 'removeAddressBookEntry':
-      return addressBook.removeAddressBookEntryById(payload.id);
 
     // --- Fee suggestions for the confirm popup ---
     case 'getFeeSuggestions':
@@ -478,6 +476,18 @@ export async function handlePopupAction(action: string, payload: any): Promise<u
 
     default:
       throw new Error(`Unknown popup action: ${action}`);
+  }
+}
+
+/**
+ * Reject internal popup actions that mutate chain state when the active account
+ * has no signing material. Mirrors the rpc-handler guard so a buggy popup
+ * (e.g. a forgotten button) can't slip past the UI hide.
+ */
+async function assertActiveCanSign(): Promise<void> {
+  const info = await keyManager.getActiveAccountInfo();
+  if (info.type === 'watchOnly') {
+    throw new Error('Active account is watch-only — it cannot sign transactions');
   }
 }
 

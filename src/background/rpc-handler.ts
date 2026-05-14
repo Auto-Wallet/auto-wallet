@@ -97,6 +97,18 @@ async function getLedgerContextOrNull(): Promise<{ address: string; derivationPa
   return { address: info.address, derivationPath: info.derivationPath };
 }
 
+/**
+ * Reject signing-class RPCs when the active account is watch-only. Throws an
+ * EIP-1193 user-rejection so dApps see a clean error instead of a low-level
+ * "wallet locked" message.
+ */
+async function assertActiveAccountCanSign(): Promise<void> {
+  const info = await keyManager.getActiveAccountInfo();
+  if (info.type === 'watchOnly') {
+    throw userRejection('Active account is watch-only — it cannot sign transactions or messages');
+  }
+}
+
 async function handleRequestAccounts(origin: string): Promise<string[]> {
   // If already unlocked, return accounts directly
   if (await keyManager.isUnlocked()) return [await keyManager.getAddress()];
@@ -324,6 +336,7 @@ async function buildLedgerTxJson(args: BuildLedgerTxArgs): Promise<SerializedTxJ
 }
 
 async function handleSendTransaction(params: unknown[], origin: string): Promise<string> {
+  await assertActiveAccountCanSign();
   const network = await networkManager.getActiveNetwork();
   const chainId = network.chainId;
   const ledger = await getLedgerContextOrNull();
@@ -479,6 +492,7 @@ async function handleSendTransaction(params: unknown[], origin: string): Promise
 }
 
 async function handlePersonalSign(params: unknown[], origin: string): Promise<string> {
+  await assertActiveAccountCanSign();
   const ledger = await getLedgerContextOrNull();
   const network = await networkManager.getActiveNetwork();
   const chainId = network.chainId;
@@ -514,6 +528,7 @@ async function handlePersonalSign(params: unknown[], origin: string): Promise<st
 }
 
 async function handleSignTypedData(params: unknown[], origin: string): Promise<string> {
+  await assertActiveAccountCanSign();
   const ledger = await getLedgerContextOrNull();
   const network = await networkManager.getActiveNetwork();
   const chainId = network.chainId;
