@@ -865,6 +865,27 @@ input[type="checkbox"]:checked::after {
   font-size: 10px;
   color: var(--text-muted);
 }
+.address-book-address-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: transparent;
+  border: none;
+  padding: 2px 0;
+  margin-top: 1px;
+  font-size: 10px;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: color .12s ease;
+}
+.address-book-address-btn:hover { color: var(--accent); }
+.address-book-address-btn .copy-icon {
+  opacity: .6;
+  flex-shrink: 0;
+  transition: opacity .12s ease, stroke .12s ease;
+}
+.address-book-address-btn:hover .copy-icon { opacity: 1; stroke: var(--accent); }
+.address-book-address-btn .copy-icon-success { stroke: var(--success); opacity: 1; }
 
 /* Token icon */
 .token-icon-img {

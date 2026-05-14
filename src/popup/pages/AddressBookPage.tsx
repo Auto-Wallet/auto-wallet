@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { callBackground } from '../api';
 import type { AddressBookEntry } from '../../types/address-book';
+import { CopyIcon, CheckIcon } from '../icons';
 
 function BookUserIcon({ size = 18 }: { size?: number }) {
   return (
@@ -19,6 +20,13 @@ export function AddressBookPage() {
   const [address, setAddress] = useState('');
   const [error, setError] = useState('');
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+  const [copiedId, setCopiedId] = useState<string | null>(null);
+
+  async function copyAddress(entry: AddressBookEntry) {
+    await navigator.clipboard.writeText(entry.address);
+    setCopiedId(entry.id);
+    setTimeout(() => setCopiedId((id) => (id === entry.id ? null : id)), 1500);
+  }
 
   useEffect(() => { loadEntries(); }, []);
 
@@ -84,19 +92,31 @@ export function AddressBookPage() {
         <div className="empty-state">No saved addresses</div>
       )}
 
-      {entries.map((entry) => (
-        <div key={entry.id} className="address-book-card">
-          <div style={{ minWidth: 0 }}>
-            <div className="address-book-name truncate">{entry.name}</div>
-            <div className="address-book-address mono">
-              {entry.address.slice(0, 12)}...{entry.address.slice(-8)}
+      {entries.map((entry) => {
+        const copied = copiedId === entry.id;
+        return (
+          <div key={entry.id} className="address-book-card">
+            <div style={{ minWidth: 0 }}>
+              <div className="address-book-name truncate">{entry.name}</div>
+              <button
+                type="button"
+                onClick={() => copyAddress(entry)}
+                className="address-book-address-btn mono"
+                title={copied ? 'Copied!' : `Copy ${entry.address}`}
+                aria-label={copied ? 'Address copied' : 'Copy address'}
+              >
+                <span>{entry.address.slice(0, 12)}...{entry.address.slice(-8)}</span>
+                {copied
+                  ? <CheckIcon size={11} className="copy-icon copy-icon-success" />
+                  : <CopyIcon size={11} className="copy-icon" />}
+              </button>
             </div>
+            <button onClick={() => removeEntry(entry.id)} className="btn-ghost danger" style={{ fontSize: 10, opacity: 0.5 }}>
+              {confirmDeleteId === entry.id ? 'Confirm' : 'Del'}
+            </button>
           </div>
-          <button onClick={() => removeEntry(entry.id)} className="btn-ghost danger" style={{ fontSize: 10, opacity: 0.5 }}>
-            {confirmDeleteId === entry.id ? 'Confirm' : 'Del'}
-          </button>
-        </div>
-      ))}
+        );
+      })}
     </div>
   );
 }
