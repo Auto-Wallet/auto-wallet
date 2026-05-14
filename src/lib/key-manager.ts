@@ -5,6 +5,7 @@ import { generatePrivateKey, type PrivateKeyAccount } from 'viem/accounts';
 import { encrypt, decrypt, type EncryptedData } from './crypto';
 import { getItem, setItem, removeItem, STORAGE_KEYS } from './storage';
 import { type WalletSettings, DEFAULT_SETTINGS } from '../types/settings';
+import { getAddress as toChecksumAddress, isAddress } from 'viem';
 import {
   decryptToAccount,
   shouldAutoLock,
@@ -13,6 +14,8 @@ import {
   nextAccountLabel,
   toAccountInfo,
   isLedger,
+  isWatchOnly,
+  canSign,
   PASSWORD_VERIFIER_PLAINTEXT,
   type AccountSource,
   type StoredAccount,
@@ -84,7 +87,7 @@ async function restoreFromSession(): Promise<boolean> {
 
   masterPassword = session.masterPassword;
   activeAccountId = session.activeAccountId;
-  if (!isLedger(target) && target.encrypted) {
+  if (canSign(target) && !isLedger(target) && target.encrypted) {
     const plaintext = await decrypt(target.encrypted, session.masterPassword);
     unlockedAccounts.set(target.id, decryptToAccount(plaintext));
   }
@@ -156,7 +159,7 @@ async function verifyPassword(password: string, accounts: StoredAccount[]): Prom
     return;
   }
   // Legacy wallets: verify by decrypting the first private account, then backfill the verifier.
-  const firstPrivate = accounts.find((a) => !isLedger(a) && a.encrypted);
+  const firstPrivate = accounts.find((a) => canSign(a) && !isLedger(a) && a.encrypted);
   if (!firstPrivate || !firstPrivate.encrypted) {
     throw new Error('No way to verify password — wallet has no verifier and no private accounts');
   }
@@ -218,6 +221,9 @@ export async function getAccount(): Promise<PrivateKeyAccount> {
     const accounts = await getStoredAccounts();
     const target = accounts.find((a) => a.id === activeAccountId);
     if (!target) throw new Error('Active account not found');
+    if (isWatchOnly(target)) {
+      throw new Error('Active account is watch-only — it cannot sign transactions');
+    }
     if (isLedger(target)) {
       throw new Error('Active account is a Ledger hardware wallet — signing must be performed in the UI');
     }
@@ -262,7 +268,7 @@ export async function switchAccount(accountId: string): Promise<string> {
   const target = stored.find((a) => a.id === accountId);
   if (!target) throw new Error('Account not found');
 
-  if (!isLedger(target) && target.encrypted && !unlockedAccounts.has(accountId)) {
+  if (canSign(target) && !isLedger(target) && target.encrypted && !unlockedAccounts.has(accountId)) {
     const plaintext = await decrypt(target.encrypted, pw);
     unlockedAccounts.set(accountId, decryptToAccount(plaintext));
   }
@@ -422,13 +428,18 @@ export async function unlock(password: string): Promise<string> {
 
   masterPassword = password;
   unlockedAccounts.clear();
-  if (!isLedger(targetAccount) && targetAccount.encrypted) {
+  if (canSign(targetAccount) && !isLedger(targetAccount) && targetAccount.encrypted) {
     const plaintext = await decrypt(targetAccount.encrypted, password);
     unlockedAccounts.set(targetAccount.id, decryptToAccount(plaintext));
   }
   activeAccountId = targetAccount.id;
   await setItem(STORAGE_KEYS.ACTIVE_ACCOUNT_ID, targetAccount.id);
   resetLockTimer();
+
+  // Best-effort migration of the legacy Address Book into watch-only accounts.
+  // Idempotent — the storage key is removed after the first successful run.
+  await migrateAddressBookToWatchOnlyOnce();
+
   return targetAccount.address;
 }
 
@@ -469,7 +480,7 @@ export async function removeAccount(accountId: string): Promise<void> {
     if (!nextActive) throw new Error('No account available after removal');
     activeAccountId = nextActive.id;
     await setItem(STORAGE_KEYS.ACTIVE_ACCOUNT_ID, activeAccountId);
-    if (masterPassword && !isLedger(nextActive) && nextActive.encrypted) {
+    if (masterPassword && canSign(nextActive) && !isLedger(nextActive) && nextActive.encrypted) {
       const plaintext = await decrypt(nextActive.encrypted, masterPassword);
       unlockedAccounts.set(nextActive.id, decryptToAccount(plaintext));
     }
@@ -489,8 +500,104 @@ export async function exportPrivateKey(accountId: string, password: string): Pro
   const accounts = await getStoredAccounts();
   const target = accounts.find((a) => a.id === accountId);
   if (!target) throw new Error('Account not found');
+  if (isWatchOnly(target)) {
+    throw new Error('Cannot export — this account is watch-only and has no private key');
+  }
   if (isLedger(target) || !target.encrypted) {
     throw new Error('Cannot export — this account is a Ledger hardware wallet');
   }
   return decrypt(target.encrypted, password);
+}
+
+// ===== Watch-only accounts (Rabby-style) =====
+
+/**
+ * Add a public address as a watch-only account. Requires the wallet to be set
+ * up (so we have somewhere to place the account in the active accounts list),
+ * but does NOT require the master password since no key material is stored.
+ */
+export async function addWatchOnlyAccount(address: string, label?: string): Promise<string> {
+  if (!isAddress(address)) throw new Error('Invalid address');
+  const checksummed = toChecksumAddress(address);
+
+  const accounts = await getStoredAccounts();
+  // Disallow duplicates regardless of source — a single address should never
+  // appear twice in the account list.
+  if (accounts.some((a) => a.address.toLowerCase() === checksummed.toLowerCase())) {
+    throw new Error('This address is already in your accounts');
+  }
+
+  const stored: StoredAccount = {
+    id: crypto.randomUUID(),
+    label: label?.trim() || nextAccountLabel(accounts.length),
+    type: 'watchOnly',
+    source: 'watchOnly',
+    address: checksummed,
+    createdAt: Date.now(),
+  };
+  accounts.push(stored);
+  await saveStoredAccounts(accounts);
+
+  // Switch to the new watch-only account so the user can see what they just
+  // added (mirrors how addAccountGenerate / addAccountPrivateKey behave).
+  activeAccountId = stored.id;
+  await setItem(STORAGE_KEYS.ACTIVE_ACCOUNT_ID, stored.id);
+  resetLockTimer();
+  return checksummed;
+}
+
+// ===== Address Book → Watch-Only migration =====
+
+interface LegacyAddressBookEntry {
+  id?: string;
+  name?: string;
+  address?: string;
+  createdAt?: number;
+}
+
+const LEGACY_ADDRESS_BOOK_KEY = 'address_book';
+
+/**
+ * One-time migration: previous versions stored a separate "Address Book". Each
+ * entry becomes a watch-only account so the user keeps all their saved
+ * addresses, now usable as accounts they can switch to in read-only mode.
+ *
+ * Idempotent: the storage key is removed at the end. Safe to call repeatedly.
+ * Only runs when there's already at least one real account, so we don't
+ * interfere with the legacy single-key unlock path.
+ */
+export async function migrateAddressBookToWatchOnlyOnce(): Promise<void> {
+  const entries = await getItem<LegacyAddressBookEntry[]>(LEGACY_ADDRESS_BOOK_KEY);
+  if (!entries || entries.length === 0) {
+    if (entries !== null) await removeItem(LEGACY_ADDRESS_BOOK_KEY);
+    return;
+  }
+
+  const accounts = await getStoredAccounts();
+  if (accounts.length === 0) {
+    // Wait for the user to finish first-time setup before we touch their data.
+    return;
+  }
+
+  const existing = new Set(accounts.map((a) => a.address.toLowerCase()));
+  let nextLabelIdx = accounts.length;
+  for (const entry of entries) {
+    if (!entry?.address || !isAddress(entry.address)) continue;
+    const checksummed = toChecksumAddress(entry.address);
+    if (existing.has(checksummed.toLowerCase())) continue;
+    const label = entry.name?.trim() || nextAccountLabel(nextLabelIdx);
+    accounts.push({
+      id: crypto.randomUUID(),
+      label,
+      type: 'watchOnly',
+      source: 'watchOnly',
+      address: checksummed,
+      createdAt: entry.createdAt ?? Date.now(),
+    });
+    existing.add(checksummed.toLowerCase());
+    nextLabelIdx++;
+  }
+
+  await saveStoredAccounts(accounts);
+  await removeItem(LEGACY_ADDRESS_BOOK_KEY);
 }

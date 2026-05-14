@@ -29,7 +29,6 @@ export const STORAGE_KEYS = {
   SEEDED_PRESET_IDS: 'seeded_preset_ids',
   WHITELIST_RULES: 'whitelist_rules',
   TOKENS: 'tokens',
-  ADDRESS_BOOK: 'address_book',
   TX_LOG: 'tx_log',
   SETTINGS: 'settings',
   PRICES_CACHE: 'prices_cache',

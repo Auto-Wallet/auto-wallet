@@ -6,6 +6,9 @@ import {
   resolveActiveAccount,
   nextAccountLabel,
   toAccountInfo,
+  isWatchOnly,
+  canSign,
+  partitionAccountsForDisplay,
   type StoredAccount,
 } from '../src/lib/key-manager.core';
 import { generatePrivateKey } from 'viem/accounts';
@@ -220,5 +223,68 @@ describe('toAccountInfo', () => {
   test('marks mnemonic private accounts', () => {
     const info = toAccountInfo(makeAccount({ source: 'mnemonic' }));
     expect(info.source).toBe('mnemonic');
+  });
+
+  test('marks watch-only accounts and derives source', () => {
+    const stored: StoredAccount = {
+      id: 'w',
+      label: 'Watched',
+      address: '0xCAFE',
+      createdAt: 0,
+      type: 'watchOnly',
+      source: 'watchOnly',
+    };
+    const info = toAccountInfo(stored);
+    expect(info.type).toBe('watchOnly');
+    expect(info.source).toBe('watchOnly');
+    expect(info.derivationPath).toBeUndefined();
+  });
+});
+
+// =============================================================
+// Watch-only helpers
+// =============================================================
+
+describe('isWatchOnly / canSign', () => {
+  test('isWatchOnly true only for type === watchOnly', () => {
+    expect(isWatchOnly(makeAccount({ type: 'watchOnly' }))).toBe(true);
+    expect(isWatchOnly(makeAccount({ type: 'private' }))).toBe(false);
+    expect(isWatchOnly(makeAccount({ type: 'ledger' }))).toBe(false);
+    // Legacy account with no `type` field → defaults to private
+    expect(isWatchOnly(makeAccount({ type: undefined }))).toBe(false);
+  });
+
+  test('canSign false for watch-only, true otherwise', () => {
+    expect(canSign(makeAccount({ type: 'watchOnly' }))).toBe(false);
+    expect(canSign(makeAccount({ type: 'private' }))).toBe(true);
+    expect(canSign(makeAccount({ type: 'ledger' }))).toBe(true);
+    expect(canSign(makeAccount({ type: undefined }))).toBe(true);
+  });
+});
+
+describe('partitionAccountsForDisplay', () => {
+  test('groups signers first and watch-only last while preserving order', () => {
+    const list = [
+      { id: '1', type: 'private' as const },
+      { id: '2', type: 'watchOnly' as const },
+      { id: '3', type: 'ledger' as const },
+      { id: '4', type: 'watchOnly' as const },
+      { id: '5', type: undefined },
+    ];
+    const { signers, watchOnly } = partitionAccountsForDisplay(list);
+    expect(signers.map((a) => a.id)).toEqual(['1', '3', '5']);
+    expect(watchOnly.map((a) => a.id)).toEqual(['2', '4']);
+  });
+
+  test('handles all-signers and all-watch-only lists', () => {
+    expect(partitionAccountsForDisplay([])).toEqual({ signers: [], watchOnly: [] });
+    expect(partitionAccountsForDisplay([{ id: 'a', type: 'private' as const }])).toEqual({
+      signers: [{ id: 'a', type: 'private' }],
+      watchOnly: [],
+    });
+    expect(partitionAccountsForDisplay([{ id: 'b', type: 'watchOnly' as const }])).toEqual({
+      signers: [],
+      watchOnly: [{ id: 'b', type: 'watchOnly' }],
+    });
   });
 });

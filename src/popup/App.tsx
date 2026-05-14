@@ -7,21 +7,20 @@ import { WhitelistPage } from './pages/WhitelistPage';
 import { NetworkPage } from './pages/NetworkPage';
 import { TxLogPage } from './pages/TxLogPage';
 import { SettingsPage } from './pages/SettingsPage';
-import { AddressBookPage } from './pages/AddressBookPage';
 import { AccountMenu } from './pages/AccountMenu';
 import { AccountBadge } from './AccountBadge';
-import type { AccountSource } from '../lib/key-manager.core';
+import type { AccountSource, AccountType } from '../lib/key-manager.core';
 import {
-  SettingsIcon, ChevronDownIcon, WalletIcon, ShieldCheckIcon, BookIcon, LinkIcon, ScrollIcon,
+  SettingsIcon, ChevronDownIcon, WalletIcon, ShieldCheckIcon, LinkIcon, ScrollIcon,
 } from './icons';
 
-type Page = 'loading' | 'setup' | 'unlock' | 'account' | 'whitelist' | 'addressBook' | 'networks' | 'txlog' | 'settings';
+type Page = 'loading' | 'setup' | 'unlock' | 'account' | 'whitelist' | 'networks' | 'txlog' | 'settings';
 
 interface AccountInfo {
   id: string;
   label: string;
   address: string;
-  type: 'private' | 'ledger';
+  type: AccountType;
   source: AccountSource;
   derivationPath?: string;
 }
@@ -29,7 +28,6 @@ interface AccountInfo {
 const NAV_ITEMS: { page: Page; label: string; Icon: React.ComponentType<{ size?: number }> }[] = [
   { page: 'account',     label: 'Wallet', Icon: WalletIcon },
   { page: 'whitelist',   label: 'Rules',  Icon: ShieldCheckIcon },
-  { page: 'addressBook', label: 'Book',   Icon: BookIcon },
   { page: 'networks',    label: 'Chains', Icon: LinkIcon },
   { page: 'txlog',       label: 'Log',    Icon: ScrollIcon },
 ];
@@ -142,7 +140,6 @@ export default function App() {
             : <div className="loading-page"><div className="spinner" /></div>
         )}
         {page === 'whitelist' && <WhitelistPage />}
-        {page === 'addressBook' && <AddressBookPage />}
         {page === 'networks' && <NetworkPage />}
         {page === 'txlog' && <TxLogPage />}
         {page === 'settings' && <SettingsPage />}

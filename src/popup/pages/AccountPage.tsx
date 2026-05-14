@@ -9,7 +9,7 @@ import { FeeEditor, type FeeOverride, type FeeEditorRequest } from '../FeeEditor
 import { AccountBadge } from '../AccountBadge';
 import { signLedgerSendTx } from '../ledger-signer';
 import { matchAddressBookEntries, resolveAddressBookInput } from '../../lib/address-book.core';
-import type { AccountSource } from '../../lib/key-manager.core';
+import type { AccountSource, AccountType } from '../../lib/key-manager.core';
 import { getPrices, nativePriceKey, tokenPriceKey } from '../../lib/price-manager';
 import {
   SendIcon, ReceiveIcon, RefreshIcon, CopyIcon, CheckIcon, ExternalLinkIcon, PlusIcon, CloseIcon,
@@ -151,7 +151,7 @@ interface ActiveInfo {
   id: string;
   label: string;
   address: string;
-  type: 'private' | 'ledger';
+  type: AccountType;
   source: AccountSource;
   derivationPath?: string;
 }
@@ -168,7 +168,6 @@ export function AccountPage({ onLock }: { onLock: () => void }) {
   const [showWalletNonce, setShowWalletNonce] = useState(false);
   const [network, setNetwork] = useState<Network | null>(null);
   const [tokens, setTokens] = useState<{ token: Token; balance: string }[]>([]);
-  const [addressBook, setAddressBook] = useState<AddressBookEntry[]>([]);
   const [accounts, setAccounts] = useState<ActiveInfo[]>([]);
   const [refreshing, setRefreshing] = useState(false);
   const [copied, setCopied] = useState(false);
@@ -249,9 +248,6 @@ export function AccountPage({ onLock }: { onLock: () => void }) {
       ];
       getPrices(queries).then(setPrices).catch(() => { /* keep last */ });
     }
-
-    const entries = await callBackground<AddressBookEntry[]>('getAddressBook');
-    setAddressBook(entries);
   }
 
   async function refreshData() {
@@ -285,7 +281,7 @@ export function AccountPage({ onLock }: { onLock: () => void }) {
   }
 
   const sendCandidates = useMemo<AddressBookEntry[]>(() => {
-    const accountEntries = accounts
+    return accounts
       .filter((account) => account.id !== active?.id)
       .map((account) => ({
         id: `account:${account.id}`,
@@ -294,8 +290,7 @@ export function AccountPage({ onLock }: { onLock: () => void }) {
         createdAt: 0,
         source: 'account' as const,
       }));
-    return [...accountEntries, ...addressBook];
-  }, [accounts, active?.id, addressBook]);
+  }, [accounts, active?.id]);
 
   const sendMatches = useMemo(
     () => matchAddressBookEntries(sendCandidates, sendTo).slice(0, 5),
@@ -428,6 +423,7 @@ export function AccountPage({ onLock }: { onLock: () => void }) {
   const balanceDisplay = balance ? parseFloat(balance).toFixed(4) : '---';
   const sendSymbol = sendTarget?.type === 'native' ? (network?.symbol ?? 'ETH') : sendTarget?.token.symbol ?? '';
   const sendMaxBalance = sendTarget?.balance ?? '';
+  const isWatchOnly = active?.type === 'watchOnly';
 
   const nativePrice = network ? prices[nativePriceKey(network.chainId, network.symbol)] ?? null : null;
   const nativeFiat = enablePrices && nativePrice !== null && balance
@@ -477,23 +473,38 @@ export function AccountPage({ onLock }: { onLock: () => void }) {
       </div>
 
       {/* Primary actions */}
-      <div className="hero-actions hero-actions-3">
-        <button onClick={openSendNative} className="action-btn">
-          <span className="action-btn-icon"><SendIcon size={16} /></span>
-          Send
-        </button>
-        <button onClick={() => setShowReceive(true)} className="action-btn">
-          <span className="action-btn-icon"><ReceiveIcon size={16} /></span>
-          Receive
-        </button>
-        <button
-          onClick={() => chrome.tabs.create({ url: chrome.runtime.getURL('swap.html') })}
-          className="action-btn"
-        >
-          <span className="action-btn-icon"><SwapIcon size={16} /></span>
-          Swap
-        </button>
-      </div>
+      {isWatchOnly ? (
+        <>
+          <div className="watch-only-banner">
+            <AccountBadge source="watchOnly" size={14} />
+            <span>Watch-only address. Send, swap, and signing are disabled.</span>
+          </div>
+          <div className="hero-actions">
+            <button onClick={() => setShowReceive(true)} className="action-btn">
+              <span className="action-btn-icon"><ReceiveIcon size={16} /></span>
+              Receive
+            </button>
+          </div>
+        </>
+      ) : (
+        <div className="hero-actions hero-actions-3">
+          <button onClick={openSendNative} className="action-btn">
+            <span className="action-btn-icon"><SendIcon size={16} /></span>
+            Send
+          </button>
+          <button onClick={() => setShowReceive(true)} className="action-btn">
+            <span className="action-btn-icon"><ReceiveIcon size={16} /></span>
+            Receive
+          </button>
+          <button
+            onClick={() => chrome.tabs.create({ url: chrome.runtime.getURL('swap.html') })}
+            className="action-btn"
+          >
+            <span className="action-btn-icon"><SwapIcon size={16} /></span>
+            Swap
+          </button>
+        </div>
+      )}
 
       {/* Send form */}
       {sendTarget && (
@@ -656,14 +667,16 @@ export function AccountPage({ onLock }: { onLock: () => void }) {
                   </div>
                 ) : (
                   <div className="token-card-actions">
-                    <button
-                      onClick={() => openSendToken(token, b)}
-                      className="token-card-icon-btn"
-                      title={`Send ${token.symbol}`}
-                      aria-label={`Send ${token.symbol}`}
-                    >
-                      <SendIcon size={14} />
-                    </button>
+                    {!isWatchOnly && (
+                      <button
+                        onClick={() => openSendToken(token, b)}
+                        className="token-card-icon-btn"
+                        title={`Send ${token.symbol}`}
+                        aria-label={`Send ${token.symbol}`}
+                      >
+                        <SendIcon size={14} />
+                      </button>
+                    )}
                     <button
                       onClick={() => setConfirmDeleteId(token.address)}
                       className="token-card-icon-btn danger"
