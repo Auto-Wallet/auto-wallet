@@ -345,6 +345,7 @@ export function SettingsPage() {
         title="Delete all accounts?"
         subject="every account in this wallet"
         destructiveLabel="Delete everything"
+        plural
         onCancel={() => setDangerOpen(false)}
         onConfirm={() => { setDangerOpen(false); void executeDeleteAll(); }}
       />

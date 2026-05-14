@@ -127,6 +127,9 @@ export function AccountMenu({ onSwitch, onClose }: { onSwitch: () => void; onClo
       return;
     }
     // Private-key or mnemonic-derived account → open the 3-step danger modal.
+    // Clear any stale low-risk "Del → Confirm" state on another row so the
+    // UI doesn't keep an orphaned "Confirm" button visible.
+    setConfirmRemoveId(null);
     setDangerRemoveAccount(a);
   }
 

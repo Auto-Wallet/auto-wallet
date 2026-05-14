@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { CloseIcon } from './icons';
 
 interface Props {
@@ -9,6 +9,9 @@ interface Props {
   subject: string;
   /** Label of the final destructive button on step 3. */
   destructiveLabel: string;
+  /** True when more than one account/address is affected (e.g. wallet wipe).
+   *  Switches singular/plural copy in step 2 ("this address" vs "these addresses"). */
+  plural?: boolean;
   onCancel: () => void;
   onConfirm: () => void;
 }
@@ -25,11 +28,13 @@ interface Props {
  *   2. Acknowledge the user has backed up the private key.
  *   3. Acknowledge that a mnemonic in this wallet only maps to one address.
  */
-export function DeleteDangerModal({ open, title, subject, destructiveLabel, onCancel, onConfirm }: Props) {
+export function DeleteDangerModal({ open, title, subject, destructiveLabel, plural = false, onCancel, onConfirm }: Props) {
   const [step, setStep] = useState<1 | 2 | 3>(1);
   const [ackBackup, setAckBackup] = useState(false);
   const [ackMnemonic, setAckMnemonic] = useState(false);
-  const overlayRef = useRef<HTMLDivElement>(null);
+
+  const addressNoun = plural ? 'these addresses' : 'this address';
+  const keyNoun = plural ? 'private keys' : 'private key';
 
   // Reset state every time the modal opens.
   useEffect(() => {
@@ -52,7 +57,7 @@ export function DeleteDangerModal({ open, title, subject, destructiveLabel, onCa
   if (!open) return null;
 
   return (
-    <div ref={overlayRef} className="receive-modal-overlay">
+    <div className="receive-modal-overlay">
       <div className="receive-modal-panel danger-modal-panel" role="dialog" aria-modal="true" aria-label={title}>
         <div className="receive-modal-header">
           <span className="receive-modal-title">
@@ -74,17 +79,19 @@ export function DeleteDangerModal({ open, title, subject, destructiveLabel, onCa
                 that can restore it — once the key is removed from this device, it is gone forever.
               </p>
               <p className="danger-modal-text">
-                If you have not backed up the private key, do not continue.
+                If you have not backed up the {keyNoun}, do not continue.
               </p>
             </>
           )}
 
           {step === 2 && (
             <>
-              <p className="danger-modal-headline">Did you back up the private key?</p>
+              <p className="danger-modal-headline">
+                {plural ? 'Did you back up every private key?' : 'Did you back up the private key?'}
+              </p>
               <p className="danger-modal-text">
                 You can export the raw private key from Settings → Export Private Key before deleting.
-                Without that backup, the funds on this address become unrecoverable.
+                Without that backup, the funds on {addressNoun} become unrecoverable.
               </p>
               <label className="danger-modal-check">
                 <input
@@ -92,7 +99,7 @@ export function DeleteDangerModal({ open, title, subject, destructiveLabel, onCa
                   checked={ackBackup}
                   onChange={(e) => setAckBackup(e.target.checked)}
                 />
-                <span>I have backed up the private key.</span>
+                <span>I have backed up the {keyNoun}.</span>
               </label>
             </>
           )}
