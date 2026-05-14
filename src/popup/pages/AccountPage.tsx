@@ -10,6 +10,11 @@ import { AccountBadge } from '../AccountBadge';
 import { signLedgerSendTx } from '../ledger-signer';
 import { matchAddressBookEntries, resolveAddressBookInput } from '../../lib/address-book.core';
 import type { AccountSource } from '../../lib/key-manager.core';
+import { getPrices, nativePriceKey, tokenPriceKey } from '../../lib/price-manager';
+import {
+  SendIcon, ReceiveIcon, RefreshIcon, CopyIcon, CheckIcon, ExternalLinkIcon, PlusIcon, CloseIcon,
+} from '../icons';
+import { ReceiveModal } from '../ReceiveModal';
 
 type SendTarget = {
   type: 'native';
@@ -19,6 +24,16 @@ type SendTarget = {
   type: 'token';
   token: Token;
   balance: string;
+}
+
+// --- Fiat formatter ---
+// Returns a human-friendly "≈ $1,234.56" / "≈ $0.0042" string. Small values
+// keep more precision so micro-positions remain visible.
+function formatFiat(usd: number): string {
+  if (!isFinite(usd) || usd <= 0) return '$0.00';
+  if (usd >= 1) return `$${usd.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  if (usd >= 0.01) return `$${usd.toFixed(4)}`;
+  return `$${usd.toFixed(6)}`;
 }
 
 // --- Token Icon helpers ---
@@ -157,6 +172,8 @@ export function AccountPage({ onLock }: { onLock: () => void }) {
   const [refreshing, setRefreshing] = useState(false);
   const [copied, setCopied] = useState(false);
   const [active, setActive] = useState<ActiveInfo | null>(null);
+  const [enablePrices, setEnablePrices] = useState(true);
+  const [prices, setPrices] = useState<Record<string, number | null>>({});
 
   // Send
   const [sendTarget, setSendTarget] = useState<SendTarget | null>(null);
@@ -177,6 +194,9 @@ export function AccountPage({ onLock }: { onLock: () => void }) {
   // Delete confirmation
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
 
+  // Receive modal
+  const [showReceive, setShowReceive] = useState(false);
+
   useEffect(() => { loadData(); }, []);
 
   async function loadData() {
@@ -191,6 +211,7 @@ export function AccountPage({ onLock }: { onLock: () => void }) {
     setNetwork(net);
     setAccounts(accountList);
     setShowWalletNonce(settings.showWalletNonce);
+    setEnablePrices(settings.enablePrices);
 
     const [bal, accountNonces] = await Promise.all([
       callBackground<string>('getNativeBalance'),
@@ -214,6 +235,19 @@ export function AccountPage({ onLock }: { onLock: () => void }) {
       }),
     );
     setTokens(withBalances);
+
+    if (settings.enablePrices) {
+      const queries = [
+        { kind: 'native' as const, chainId: net.chainId, symbol: net.symbol },
+        ...chainTokens.map((t) => ({
+          kind: 'token' as const,
+          chainId: t.chainId,
+          address: t.address,
+          symbol: t.symbol,
+        })),
+      ];
+      getPrices(queries).then(setPrices).catch(() => { /* keep last */ });
+    }
 
     const entries = await callBackground<AddressBookEntry[]>('getAddressBook');
     setAddressBook(entries);
@@ -394,29 +428,44 @@ export function AccountPage({ onLock }: { onLock: () => void }) {
   const sendSymbol = sendTarget?.type === 'native' ? (network?.symbol ?? 'ETH') : sendTarget?.token.symbol ?? '';
   const sendMaxBalance = sendTarget?.balance ?? '';
 
+  const nativePrice = network ? prices[nativePriceKey(network.chainId, network.symbol)] ?? null : null;
+  const nativeFiat = enablePrices && nativePrice !== null && balance
+    ? formatFiat(parseFloat(balance) * nativePrice)
+    : null;
+
   return (
     <div className="stack stack-md animate-in">
-      {/* Network */}
-      <div className="row row-center">
-        <span className="badge badge-network">
-          <span className="pulse-dot" />
-          {network?.name ?? '...'}
-        </span>
-      </div>
+      {/* --- Wallet Hero --- */}
+      <div className="wallet-hero">
+        <div className="wallet-hero-top">
+          <span className="badge badge-network">
+            <span className="pulse-dot" />
+            {network?.name ?? '...'}
+          </span>
+          <button
+            onClick={refreshData}
+            className={`hero-refresh-btn ${refreshing ? 'is-loading' : ''}`}
+            disabled={refreshing}
+            aria-label="Refresh balances"
+            title="Refresh balances"
+          >
+            <RefreshIcon size={14} />
+          </button>
+        </div>
 
-      {/* Address */}
-      <div className="text-center">
+        <div className="hero-balance">
+          <div className="balance-value">{balanceDisplay}</div>
+          <div className="balance-symbol">{network?.symbol ?? 'ETH'}</div>
+          {nativeFiat && <div className="balance-fiat">≈ {nativeFiat}</div>}
+        </div>
+
         <button onClick={copyAddress} className="address-chip">
           {active && <AccountBadge source={active.source} size={11} />}
           {short}
           {copied ? (
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--success)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <path d="m12 15 2 2 4-4"/><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/>
-            </svg>
+            <CheckIcon size={14} className="copy-icon copy-icon-success" />
           ) : (
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--text-muted)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="copy-icon">
-              <rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/>
-            </svg>
+            <CopyIcon size={14} className="copy-icon" />
           )}
         </button>
         {showWalletNonce && nonces && (
@@ -426,21 +475,15 @@ export function AccountPage({ onLock }: { onLock: () => void }) {
         )}
       </div>
 
-      {/* Balance */}
-      <div className="hero-balance">
-        <div className="balance-value">{balanceDisplay}</div>
-        <div className="balance-symbol">{network?.symbol ?? 'ETH'}</div>
-      </div>
-
-      {/* Actions */}
-      <div className="row row-center gap-sm">
+      {/* Primary actions */}
+      <div className="hero-actions">
         <button onClick={openSendNative} className="action-btn">
-          <span className="action-btn-icon">&#8593;</span>
+          <span className="action-btn-icon"><SendIcon size={16} /></span>
           Send
         </button>
-        <button onClick={refreshData} className={`action-btn ${refreshing ? 'is-loading' : ''}`} disabled={refreshing}>
-          <span className="action-btn-icon refresh-icon">&#8635;</span>
-          {refreshing ? 'Refreshing' : 'Refresh'}
+        <button onClick={() => setShowReceive(true)} className="action-btn">
+          <span className="action-btn-icon"><ReceiveIcon size={16} /></span>
+          Receive
         </button>
       </div>
 
@@ -514,7 +557,8 @@ export function AccountPage({ onLock }: { onLock: () => void }) {
               {network?.blockExplorerUrl ? (
                 <a href={`${network.blockExplorerUrl}/tx/${sendSuccess}`}
                   target="_blank" rel="noopener noreferrer" className="tx-link">
-                  {sendSuccess.slice(0, 18)}...{sendSuccess.slice(-8)} &#8599;
+                  {sendSuccess.slice(0, 18)}...{sendSuccess.slice(-8)}
+                  <ExternalLinkIcon size={11} className="tx-link-icon" />
                 </a>
               ) : (
                 <span style={{ wordBreak: 'break-all', fontSize: 10 }}>{sendSuccess}</span>
@@ -561,37 +605,65 @@ export function AccountPage({ onLock }: { onLock: () => void }) {
 
         {tokens.map(({ token, balance: b }) => {
           const isConfirming = confirmDeleteId === token.address;
+          const balanceText = typeof b === 'string' && b !== '?' ? parseFloat(b).toFixed(4) : b;
+          const tokenPrice = prices[tokenPriceKey(token.chainId, token.address, token.symbol)] ?? null;
+          const tokenFiat = enablePrices && tokenPrice !== null && b && b !== '?'
+            ? formatFiat(parseFloat(b) * tokenPrice)
+            : null;
           return (
             <div key={`${token.chainId}-${token.address}`} className="token-card">
               <div className="row gap-md" style={{ flex: 1, minWidth: 0 }}>
                 <TokenIcon token={token} />
                 <div style={{ minWidth: 0, flex: 1 }}>
-                  <div className="row gap-xs" style={{ marginBottom: 2 }}>
+                  <div className="row gap-xs" style={{ marginBottom: 1 }}>
                     <span className="token-card-symbol">{token.symbol}</span>
-                    {token.name && <span className="token-card-name truncate">{token.name}</span>}
                   </div>
-                  <div className="token-card-balance mono">
-                    {typeof b === 'string' && b !== '?' ? parseFloat(b).toFixed(4) : b} {token.symbol}
-                  </div>
+                  {token.name && <div className="token-card-name truncate">{token.name}</div>}
                 </div>
               </div>
 
-              <div className="token-card-actions">
+              <div className="token-card-right">
+                <div className="token-card-amount">
+                  <span className="token-card-balance mono">{balanceText}</span>
+                  {tokenFiat && <span className="token-card-fiat">{tokenFiat}</span>}
+                </div>
                 {isConfirming ? (
-                  <div className="row gap-xs">
-                    <button onClick={() => removeToken(token)} className="btn-ghost danger" style={{ fontSize: 10 }}>
-                      Confirm
+                  <div className="token-card-confirm">
+                    <button
+                      onClick={() => removeToken(token)}
+                      className="token-card-icon-btn danger"
+                      title="Confirm remove"
+                      aria-label="Confirm remove token"
+                    >
+                      <CheckIcon size={14} />
                     </button>
-                    <button onClick={() => setConfirmDeleteId(null)} className="btn-ghost" style={{ fontSize: 10 }}>
-                      No
+                    <button
+                      onClick={() => setConfirmDeleteId(null)}
+                      className="token-card-icon-btn"
+                      title="Cancel"
+                      aria-label="Cancel"
+                    >
+                      <CloseIcon size={14} />
                     </button>
                   </div>
                 ) : (
-                  <div className="row gap-xs">
-                    <button onClick={() => openSendToken(token, b)} className="btn-ghost accent"
-                      style={{ fontSize: 10 }}>Send</button>
-                    <button onClick={() => setConfirmDeleteId(token.address)} className="btn-ghost danger"
-                      style={{ fontSize: 10, opacity: 0.4 }}>Del</button>
+                  <div className="token-card-actions">
+                    <button
+                      onClick={() => openSendToken(token, b)}
+                      className="token-card-icon-btn"
+                      title={`Send ${token.symbol}`}
+                      aria-label={`Send ${token.symbol}`}
+                    >
+                      <SendIcon size={14} />
+                    </button>
+                    <button
+                      onClick={() => setConfirmDeleteId(token.address)}
+                      className="token-card-icon-btn danger"
+                      title="Remove token"
+                      aria-label="Remove token"
+                    >
+                      <CloseIcon size={14} />
+                    </button>
                   </div>
                 )}
               </div>
@@ -599,6 +671,14 @@ export function AccountPage({ onLock }: { onLock: () => void }) {
           );
         })}
       </div>
+
+      {showReceive && address && (
+        <ReceiveModal
+          address={address}
+          networkName={network?.name}
+          onClose={() => setShowReceive(false)}
+        />
+      )}
     </div>
   );
 }

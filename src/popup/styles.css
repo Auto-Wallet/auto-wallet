@@ -57,6 +57,93 @@
   --shadow-sm:   0 1px 3px rgba(0,0,0,.06), 0 1px 2px rgba(0,0,0,.04);
   --shadow-md:   0 4px 12px rgba(0,0,0,.06), 0 1px 3px rgba(0,0,0,.04);
   --shadow-glow: 0 0 0 3px var(--accent-ring);
+
+  color-scheme: light;
+}
+
+/* --- Dark theme ---
+   `[data-theme="dark"]` is set explicitly (Settings → Theme → Dark).
+   `:root:not([data-theme="light"])` under prefers-color-scheme: dark inherits
+   the system preference unless the user has forced Light. */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg-root:       #0f1119;
+    --bg-card:       #181b25;
+    --bg-card-hover: #1f2230;
+    --bg-input:      #14171f;
+    --bg-elevated:   #1c1f29;
+
+    --border-subtle:  #1f2230;
+    --border-default: #2a2e3a;
+    --border-focus:   rgba(129,140,248,.55);
+    --border-active:  #818cf8;
+
+    --text-primary:   #e7e9f0;
+    --text-secondary: #9ba1b3;
+    --text-muted:     #6a7185;
+    --text-inverse:   #0f1119;
+
+    --accent:         #818cf8;
+    --accent-hover:   #a5b4fc;
+    --accent-subtle:  rgba(129,140,248,.14);
+    --accent-ring:    rgba(129,140,248,.32);
+    --coral:          #fb7185;
+    --coral-subtle:   rgba(251,113,133,.12);
+
+    --success:        #34d399;
+    --success-bg:     rgba(52,211,153,.14);
+    --warning:        #fbbf24;
+    --warning-bg:     rgba(251,191,36,.14);
+    --danger:         #f87171;
+    --danger-bg:      rgba(248,113,113,.14);
+
+    --shadow-xs:   0 1px 2px rgba(0,0,0,.3);
+    --shadow-sm:   0 1px 3px rgba(0,0,0,.35), 0 1px 2px rgba(0,0,0,.25);
+    --shadow-md:   0 6px 16px rgba(0,0,0,.5), 0 1px 3px rgba(0,0,0,.3);
+
+    --overlay-bg: rgba(8, 10, 16, .8);
+
+    color-scheme: dark;
+  }
+}
+
+[data-theme="dark"] {
+  --overlay-bg: rgba(8, 10, 16, .8);
+  --bg-root:       #0f1119;
+  --bg-card:       #181b25;
+  --bg-card-hover: #1f2230;
+  --bg-input:      #14171f;
+  --bg-elevated:   #1c1f29;
+
+  --border-subtle:  #1f2230;
+  --border-default: #2a2e3a;
+  --border-focus:   rgba(129,140,248,.55);
+  --border-active:  #818cf8;
+
+  --text-primary:   #e7e9f0;
+  --text-secondary: #9ba1b3;
+  --text-muted:     #6a7185;
+  --text-inverse:   #0f1119;
+
+  --accent:         #818cf8;
+  --accent-hover:   #a5b4fc;
+  --accent-subtle:  rgba(129,140,248,.14);
+  --accent-ring:    rgba(129,140,248,.32);
+  --coral:          #fb7185;
+  --coral-subtle:   rgba(251,113,133,.12);
+
+  --success:        #34d399;
+  --success-bg:     rgba(52,211,153,.14);
+  --warning:        #fbbf24;
+  --warning-bg:     rgba(251,191,36,.14);
+  --danger:         #f87171;
+  --danger-bg:      rgba(248,113,113,.14);
+
+  --shadow-xs:   0 1px 2px rgba(0,0,0,.3);
+  --shadow-sm:   0 1px 3px rgba(0,0,0,.35), 0 1px 2px rgba(0,0,0,.25);
+  --shadow-md:   0 6px 16px rgba(0,0,0,.5), 0 1px 3px rgba(0,0,0,.3);
+
+  color-scheme: dark;
 }
 
 /* --- Reset --- */
@@ -97,7 +184,7 @@ body {
   align-items: center;
   justify-content: space-between;
   gap: 8px;
-  padding: 8px 12px;
+  padding: 7px 12px;
 }
 
 .header-row-nav {
@@ -106,17 +193,29 @@ body {
 }
 .nav-tab {
   flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
   font-family: var(--font-sans);
-  font-size: 11px;
+  font-size: 10px;
   font-weight: 500;
   color: var(--text-muted);
   background: none;
   border: none;
-  padding: 8px 0;
+  padding: 7px 0 8px;
   cursor: pointer;
-  transition: all .12s ease;
-  text-align: center;
+  transition: color .12s ease;
   position: relative;
+}
+.nav-tab-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: inherit;
+}
+.nav-tab-label {
+  letter-spacing: .02em;
 }
 .nav-tab:hover { color: var(--text-secondary); }
 .nav-tab.active {
@@ -127,8 +226,8 @@ body {
   content: '';
   position: absolute;
   bottom: 0;
-  left: 20%;
-  right: 20%;
+  left: 22%;
+  right: 22%;
   height: 2px;
   background: var(--accent);
   border-radius: 2px 2px 0 0;
@@ -422,10 +521,65 @@ input[type="checkbox"]:checked::after {
 .text-center { text-align: center; }
 .flex-1 { flex: 1; }
 
-/* --- Account Hero --- */
+/* --- Wallet Hero (composed card) --- */
+.wallet-hero {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+  padding: 18px 18px 20px;
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--border-subtle);
+  background:
+    radial-gradient(120% 80% at 50% 0%, var(--accent-subtle) 0%, transparent 55%),
+    linear-gradient(180deg, var(--bg-elevated) 0%, var(--bg-card) 100%);
+  box-shadow: var(--shadow-sm);
+  overflow: hidden;
+}
+.wallet-hero::before {
+  /* Subtle accent line at top */
+  content: '';
+  position: absolute;
+  top: 0; left: 12%; right: 12%;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, var(--accent-ring), transparent);
+}
+
+.wallet-hero-top {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.hero-refresh-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  color: var(--text-muted);
+  background: var(--bg-input);
+  border: 1px solid var(--border-subtle);
+  border-radius: 50%;
+  cursor: pointer;
+  transition: all .12s ease;
+}
+.hero-refresh-btn:hover {
+  color: var(--accent);
+  background: var(--accent-subtle);
+  border-color: rgba(79,70,229,.18);
+}
+.hero-refresh-btn:disabled { opacity: .55; cursor: wait; }
+.hero-refresh-btn.is-loading svg { animation: spin .7s linear infinite; }
+
 .hero-balance {
   text-align: center;
-  padding: 24px 0 8px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
 }
 .hero-balance .balance-value {
   font-family: var(--font-mono);
@@ -436,28 +590,43 @@ input[type="checkbox"]:checked::after {
   line-height: 1.1;
 }
 .hero-balance .balance-symbol {
-  font-size: 12px;
-  font-weight: 500;
+  font-size: 11px;
+  font-weight: 600;
   color: var(--text-muted);
   margin-top: 4px;
-  letter-spacing: .08em;
+  letter-spacing: .12em;
   text-transform: uppercase;
 }
-
-/* Action buttons (Send / Refresh) */
-.action-btn {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 4px;
+.hero-balance .balance-fiat {
+  margin-top: 6px;
   font-family: var(--font-sans);
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 500;
   color: var(--text-secondary);
+}
+.hero-balance .balance-fiat.placeholder { color: var(--text-muted); opacity: .55; }
+
+/* Send/Receive action row sits below the hero */
+.hero-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+/* Send / Receive action buttons (Wallet hero) */
+.action-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  font-family: var(--font-sans);
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
   background: var(--bg-card);
-  border: 1px solid var(--border-subtle);
+  border: 1px solid var(--border-default);
   border-radius: var(--radius-md);
-  padding: 10px 20px;
+  padding: 11px 16px;
   cursor: pointer;
   transition: all .12s ease;
   box-shadow: var(--shadow-xs);
@@ -465,19 +634,18 @@ input[type="checkbox"]:checked::after {
 .action-btn:hover {
   border-color: var(--accent);
   color: var(--accent);
+  background: var(--accent-subtle);
   box-shadow: var(--shadow-sm);
 }
-.action-btn:disabled {
-  opacity: .7;
-  cursor: wait;
-}
+.action-btn:active { transform: scale(.98); }
+.action-btn:disabled { opacity: .6; cursor: wait; }
 .action-btn-icon {
-  font-size: 18px;
-  line-height: 1;
+  display: inline-flex;
+  align-items: center;
+  color: var(--accent);
+  flex-shrink: 0;
 }
-.action-btn.is-loading .refresh-icon {
-  animation: spin .7s linear infinite;
-}
+.action-btn:hover .action-btn-icon { color: var(--accent-hover); }
 
 .address-chip {
   font-family: var(--font-mono);
@@ -512,8 +680,8 @@ input[type="checkbox"]:checked::after {
 }
 
 .settings-icon-btn {
-  width: 34px;
-  height: 34px;
+  width: 30px;
+  height: 30px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -521,7 +689,7 @@ input[type="checkbox"]:checked::after {
   color: var(--text-muted);
   background: var(--bg-input);
   border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius-pill);
   cursor: pointer;
   transition: all .12s ease;
 }
@@ -529,7 +697,7 @@ input[type="checkbox"]:checked::after {
 .settings-icon-btn.active {
   color: var(--accent);
   background: var(--accent-subtle);
-  border-color: rgba(79,70,229,.15);
+  border-color: var(--accent-ring);
 }
 
 /* Token card (bigger, with icon) */
@@ -537,14 +705,17 @@ input[type="checkbox"]:checked::after {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 12px;
+  padding: 10px 12px;
   background: var(--bg-card);
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-md);
   box-shadow: var(--shadow-xs);
-  transition: border-color .1s ease;
+  transition: all .12s ease;
 }
-.token-card:hover { border-color: var(--border-default); }
+.token-card:hover {
+  border-color: var(--border-default);
+  background: var(--bg-card-hover);
+}
 
 .token-card-symbol {
   font-size: 14px;
@@ -558,11 +729,63 @@ input[type="checkbox"]:checked::after {
 }
 .token-card-balance {
   font-size: 12px;
-  color: var(--text-secondary);
+  font-weight: 500;
+  color: var(--text-primary);
+}
+.token-card-fiat {
+  font-size: 10px;
+  color: var(--text-muted);
+  margin-top: 1px;
+}
+.token-card-right {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+}
+.token-card-amount {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  min-width: 0;
 }
 .token-card-actions {
-  flex-shrink: 0;
-  margin-left: 8px;
+  display: flex;
+  gap: 2px;
+  margin-left: 4px;
+  opacity: 0;
+  transform: translateX(4px);
+  transition: all .12s ease;
+}
+.token-card:hover .token-card-actions {
+  opacity: 1;
+  transform: translateX(0);
+}
+.token-card-icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  color: var(--text-muted);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: all .1s ease;
+}
+.token-card-icon-btn:hover {
+  color: var(--accent);
+  background: var(--accent-subtle);
+}
+.token-card-icon-btn.danger:hover {
+  color: var(--danger);
+  background: var(--danger-bg);
+}
+.token-card-confirm {
+  display: flex;
+  gap: 4px;
+  margin-left: 4px;
 }
 
 /* Address book */
@@ -1080,6 +1303,109 @@ body:has(.confirm-shell) {
   box-shadow: 0 -1px 3px rgba(0,0,0,.04);
 }
 
+/* --- Receive Modal (Wallet hero) --- */
+.receive-modal-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding: 24px 16px;
+  background: rgba(15, 23, 42, .42);
+  backdrop-filter: blur(4px);
+  animation: fadeIn .15s ease-out;
+}
+.receive-modal-panel {
+  width: 100%;
+  max-width: 320px;
+  background: var(--bg-card);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-lg);
+  box-shadow: 0 18px 60px rgba(15, 23, 42, .25);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.receive-modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 14px 10px;
+}
+.receive-modal-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+.receive-modal-close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  color: var(--text-muted);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: all .1s ease;
+}
+.receive-modal-close:hover {
+  color: var(--text-secondary);
+  background: var(--bg-card-hover);
+}
+.receive-modal-body {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  padding: 0 16px 16px;
+}
+.receive-modal-qr {
+  width: 200px;
+  height: 200px;
+  padding: 12px;
+  background: #ffffff;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border-subtle);
+  box-shadow: var(--shadow-xs);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.receive-modal-qr svg {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+.receive-modal-network {
+  font-family: var(--font-sans);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: .12em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+.receive-modal-address {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--text-primary);
+  word-break: break-all;
+  text-align: center;
+  background: var(--bg-input);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  padding: 10px 12px;
+  width: 100%;
+}
+.receive-modal-footer {
+  display: flex;
+  gap: 8px;
+  padding: 0 16px 16px;
+}
+
 /* --- Animation --- */
 @keyframes fadeIn {
   from { opacity: 0; transform: translateY(4px); }
@@ -1127,10 +1453,11 @@ body:has(.confirm-shell) {
   white-space: nowrap;
 }
 .account-trigger-chevron {
-  font-size: 8px;
   color: var(--text-muted);
   margin-left: 2px;
+  flex-shrink: 0;
 }
+.account-trigger:hover .account-trigger-chevron { color: var(--text-secondary); }
 
 /* --- Account Menu (Dropdown) --- */
 .account-menu {
@@ -1315,7 +1642,7 @@ body:has(.confirm-shell) {
   z-index: 500;
   display: flex;
   padding: 18px;
-  background: rgba(248,250,252,.92);
+  background: var(--overlay-bg, rgba(248,250,252,.92));
   backdrop-filter: blur(6px);
 }
 .ledger-picker-panel {
@@ -1494,7 +1821,7 @@ body:has(.confirm-shell) {
   align-items: center;
   justify-content: center;
   font-size: 11px;
-  background: #fff;
+  background: var(--bg-card);
   color: var(--accent);
 }
 .ledger-row-check[data-checked="true"] {
@@ -1568,6 +1895,41 @@ body:has(.confirm-shell) {
   border-color: var(--accent);
   color: var(--accent);
   font-weight: 600;
+}
+
+/* Theme tri-toggle (Auto / Light / Dark) */
+.theme-toggle {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 6px;
+}
+.theme-option {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  font-family: var(--font-sans);
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--text-secondary);
+  background: var(--bg-input);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  padding: 10px 4px;
+  cursor: pointer;
+  transition: all .1s ease;
+}
+.theme-option:hover { border-color: var(--border-default); color: var(--text-primary); }
+.theme-option.active {
+  background: var(--accent-subtle);
+  border-color: var(--accent);
+  color: var(--accent);
+  font-weight: 600;
+}
+.theme-option-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .settings-row {
@@ -1668,7 +2030,7 @@ body:has(.confirm-shell) {
 .search-icon {
   position: absolute;
   left: 10px;
-  font-size: 14px;
+  display: inline-flex;
   color: var(--text-muted);
   pointer-events: none;
 }
@@ -1692,17 +2054,20 @@ body:has(.confirm-shell) {
 .search-input::placeholder { color: var(--text-muted); }
 .search-clear {
   position: absolute;
-  right: 8px;
-  font-size: 16px;
+  right: 6px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
   color: var(--text-muted);
   background: none;
   border: none;
+  border-radius: 6px;
   cursor: pointer;
-  padding: 0 4px;
-  line-height: 1;
-  transition: color .1s ease;
+  transition: all .1s ease;
 }
-.search-clear:hover { color: var(--text-secondary); }
+.search-clear:hover { color: var(--text-secondary); background: var(--bg-card-hover); }
 
 /* --- Tx Hash Link --- */
 .tx-link {
@@ -1712,10 +2077,17 @@ body:has(.confirm-shell) {
   text-decoration: none;
   transition: color .1s ease;
   word-break: break-all;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
 }
 .tx-link:hover {
   color: var(--accent-hover);
   text-decoration: underline;
+}
+.tx-link-icon {
+  flex-shrink: 0;
+  opacity: .8;
 }
 
 /* --- JSON Inspector (confirm popup debug copy) --- */

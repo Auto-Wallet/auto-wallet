@@ -5,18 +5,36 @@ import { MSG_SOURCE, type RpcResponse } from '../types/messages';
 import { isProviderInjectionAllowed } from '../lib/injection-policy';
 import type { WalletSettings } from '../types/settings';
 
+// True while this content script's link to the extension is still valid.
+// After the user reloads the extension in chrome://extensions, the old content
+// script keeps running in already-open tabs but every chrome.* call throws
+// "Extension context invalidated". Guarding every entrypoint lets us no-op
+// instead of spewing errors into the page console.
+function isExtensionAlive(): boolean {
+  try {
+    return !!chrome.runtime?.id;
+  } catch {
+    return false;
+  }
+}
+
 if (isProviderInjectionAllowed(window.location.href)) {
   // Forward injectWindowEthereum setting to inpage.ts (MAIN world)
   // inpage.ts cannot access chrome.storage, so we read and relay it.
-  chrome.storage.local.get('settings', (result) => {
-    const settings = result.settings as Partial<WalletSettings> | undefined;
-    const forceInject = settings?.injectWindowEthereum === true;
-    window.postMessage({
-      source: MSG_SOURCE,
-      type: 'inject_setting',
-      forceInject,
-    }, '*');
-  });
+  if (isExtensionAlive()) {
+    try {
+      chrome.storage.local.get('settings', (result) => {
+        if (chrome.runtime.lastError) return;
+        const settings = result.settings as Partial<WalletSettings> | undefined;
+        const forceInject = settings?.injectWindowEthereum === true;
+        window.postMessage({
+          source: MSG_SOURCE,
+          type: 'inject_setting',
+          forceInject,
+        }, '*');
+      });
+    } catch { /* context died between check and call */ }
+  }
 
   // Forward messages from page (inpage.js) to background service worker
   // SECURITY: Never trust page-supplied origin — overwrite with real origin from ISOLATED world
@@ -24,18 +42,27 @@ if (isProviderInjectionAllowed(window.location.href)) {
     if (event.source !== window) return;
     if (event.data?.source !== MSG_SOURCE) return;
     if (event.data?.type !== 'rpc_request') return;
+    if (!isExtensionAlive()) return;
 
     const sanitized = { ...event.data, origin: window.location.origin };
-    chrome.runtime.sendMessage(sanitized, (response: RpcResponse) => {
-      window.postMessage(response, '*');
-    });
+    try {
+      chrome.runtime.sendMessage(sanitized, (response: RpcResponse) => {
+        // Swallow callback errors so the page console stays clean.
+        if (chrome.runtime.lastError) return;
+        window.postMessage(response, '*');
+      });
+    } catch { /* extension reloaded mid-flight */ }
   });
 
   // Forward events from background to page (e.g. accountsChanged, chainChanged)
-  chrome.runtime.onMessage.addListener((message) => {
-    if (message?.source !== MSG_SOURCE) return;
-    if (message.type === 'event') {
-      window.postMessage(message, '*');
-    }
-  });
+  if (isExtensionAlive()) {
+    try {
+      chrome.runtime.onMessage.addListener((message) => {
+        if (message?.source !== MSG_SOURCE) return;
+        if (message.type === 'event') {
+          window.postMessage(message, '*');
+        }
+      });
+    } catch { /* extension reloaded before listener registered */ }
+  }
 }

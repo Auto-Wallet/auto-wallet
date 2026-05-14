@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { callBackground } from '../api';
 import type { TxLogEntry } from '../../lib/tx-logger';
 import type { Network } from '../../types/network';
+import { ExternalLinkIcon } from '../icons';
 
 const GWEI = 1_000_000_000n;
 const ETHER = 1_000_000_000_000_000_000n;
@@ -96,7 +97,8 @@ export function TxLogPage() {
                   tx:{' '}
                   {explorerUrl ? (
                     <a href={explorerUrl} target="_blank" rel="noopener noreferrer" className="tx-link">
-                      {entry.hash.slice(0, 18)}...{entry.hash.slice(-8)} &#8599;
+                      {entry.hash.slice(0, 18)}...{entry.hash.slice(-8)}
+                      <ExternalLinkIcon size={11} className="tx-link-icon" />
                     </a>
                   ) : (
                     entry.hash

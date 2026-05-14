@@ -855,5 +855,8 @@ function JsonInspector({
   );
 }
 
+import { initTheme } from '../popup/theme';
+initTheme();
+
 const root = createRoot(document.getElementById('root')!);
 root.render(<ConfirmPage />);

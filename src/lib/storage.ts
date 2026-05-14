@@ -32,4 +32,5 @@ export const STORAGE_KEYS = {
   ADDRESS_BOOK: 'address_book',
   TX_LOG: 'tx_log',
   SETTINGS: 'settings',
+  PRICES_CACHE: 'prices_cache',
 } as const;

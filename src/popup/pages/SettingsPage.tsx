@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { callBackground } from '../api';
-import type { WalletSettings } from '../../types/settings';
+import type { WalletSettings, ThemePreference } from '../../types/settings';
 import type { AccountSource } from '../../lib/key-manager.core';
+import { SunIcon, MoonIcon, MonitorIcon } from '../icons';
 
 interface AccountInfo {
   id: string;
@@ -98,6 +99,28 @@ export function SettingsPage() {
       <div className="row row-between">
         <p className="page-title">Settings</p>
         {saved && <span style={{ fontSize: 11, color: 'var(--success)', fontWeight: 500 }}>Saved</span>}
+      </div>
+
+      {/* Theme */}
+      <div className="card">
+        <p className="section-label" style={{ marginBottom: 10 }}>Theme</p>
+        <div className="theme-toggle">
+          {([
+            { value: 'auto' as const,  label: 'Auto',  Icon: MonitorIcon },
+            { value: 'light' as const, label: 'Light', Icon: SunIcon },
+            { value: 'dark' as const,  label: 'Dark',  Icon: MoonIcon },
+          ]).map(({ value, label, Icon }) => (
+            <button
+              key={value}
+              onClick={() => updateSetting({ theme: value })}
+              className={`theme-option ${settings.theme === value ? 'active' : ''}`}
+              aria-pressed={settings.theme === value}
+            >
+              <span className="theme-option-icon"><Icon size={16} /></span>
+              {label}
+            </button>
+          ))}
+        </div>
       </div>
 
       {/* Auto-lock */}
@@ -208,6 +231,23 @@ export function SettingsPage() {
       {/* Provider */}
       <div className="card">
         <p className="section-label" style={{ marginBottom: 10 }}>Wallet Display</p>
+
+        <div className="settings-row">
+          <div style={{ flex: 1 }}>
+            <p style={{ fontSize: 12, fontWeight: 500, color: 'var(--text-primary)' }}>USD prices</p>
+            <p style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>
+              Fetch native and ERC-20 prices from CoinGecko (cached 15 min)
+            </p>
+          </div>
+          <button
+            onClick={() => updateSetting({ enablePrices: !settings.enablePrices })}
+            className={`toggle ${settings.enablePrices ? 'on' : ''}`}
+          >
+            <span className="toggle-knob" />
+          </button>
+        </div>
+
+        <div className="settings-divider" />
 
         <div className="settings-row">
           <div style={{ flex: 1 }}>
