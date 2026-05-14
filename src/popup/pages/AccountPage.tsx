@@ -456,15 +456,30 @@ export function AccountPage({ onLock }: { onLock: () => void }) {
           {nativeFiat && <div className="balance-fiat">≈ {nativeFiat}</div>}
         </div>
 
-        <button onClick={copyAddress} className="address-chip">
-          {active && <AccountBadge source={active.source} size={11} />}
-          {short}
-          {copied ? (
-            <CheckIcon size={14} className="copy-icon copy-icon-success" />
-          ) : (
-            <CopyIcon size={14} className="copy-icon" />
+        <div className="address-row">
+          <button onClick={copyAddress} className="address-chip">
+            {active && <AccountBadge source={active.source} size={11} />}
+            {short}
+            {copied ? (
+              <CheckIcon size={14} className="copy-icon copy-icon-success" />
+            ) : (
+              <CopyIcon size={14} className="copy-icon" />
+            )}
+          </button>
+          {active && (
+            <a
+              href={`https://debank.com/profile/${active.address}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="debank-link"
+              title="View portfolio on DeBank"
+              aria-label="View portfolio on DeBank"
+            >
+              DeBank
+              <ExternalLinkIcon size={11} />
+            </a>
           )}
-        </button>
+        </div>
         {showWalletNonce && nonces && (
           <div className="nonce-meta">
             nonce {nonces.latest} · pending {nonces.pending}
