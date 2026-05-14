@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { callBackground } from '../popup/api';
-import { ArrowDownIcon, ChevronDownIcon, ExternalLinkIcon, RefreshIcon, SwapIcon } from '../popup/icons';
+import { ArrowDownIcon, ChevronDownIcon, ExternalLinkIcon, RefreshIcon } from '../popup/icons';
 import {
   buildTx as xfBuildTx,
   getQuote,
@@ -11,6 +11,7 @@ import {
   isNativeToken,
   type XfChain,
   type XfQuote,
+  type XfStatus,
   type XfToken,
 } from '../lib/xflows';
 import { TokenPicker, type PickerSelection } from './TokenPicker';
@@ -72,11 +73,17 @@ export function SwapPage() {
   const [allowance, setAllowance] = useState<bigint | null>(null);
 
   const [stage, setStage] = useState<SwapStage>({ kind: 'idle' });
-  const [statusText, setStatusText] = useState<string>('');
+  // Live status polled from XFlows /api/v3/status after submission. `null`
+  // means we're still waiting for the first poll to return.
+  const [swapStatus, setSwapStatus] = useState<XfStatus | null>(null);
+  const [statusPolling, setStatusPolling] = useState(false);
   // Bumped after a swap is submitted to force balance + quote re-fetch.
   // The previous quote's `amountOut` is stale once the source tx lands, since
   // the user's balance has dropped and rates may have moved.
   const [refreshNonce, setRefreshNonce] = useState(0);
+  // Per-swap cancellation token; used so a newly-started swap aborts the
+  // polling loop from any previous one still in flight.
+  const pollSeqRef = useRef(0);
 
   // Re-fetch quote when inputs change.
   const reqIdRef = useRef(0);
@@ -295,6 +302,10 @@ export function SwapPage() {
 
   async function performSwap() {
     if (!from || !to || !active || !amountRaw || !quote) return;
+    // Cancel any polling loop from a previous swap and clear its display.
+    pollSeqRef.current += 1;
+    setSwapStatus(null);
+    setStatusPolling(false);
     setStage({ kind: 'swapping' });
     try {
       const built = await xfBuildTx({
@@ -329,36 +340,53 @@ export function SwapPage() {
       // `refreshNonce` bumps and will repaint with fresh numbers.
       setQuote(null);
       setRefreshNonce((n) => n + 1);
+      setSwapStatus(null);
       pollSwapStatus(hash);
     } catch (e: any) {
       setStage({ kind: 'error', message: e?.message ?? 'Swap failed' });
     }
   }
 
+  /**
+   * Poll /api/v3/status every 5s until a terminal state is reached or we hit
+   * the cap (~10 min). Statuses 1/2/4/5/7 are terminal. Status 3 (Processing)
+   * and 6 (Trusteeship) keep the loop running — Trusteeship means the user
+   * needs to contact support so we still keep showing the latest snapshot.
+   *
+   * Bumping `pollSeqRef.current` cancels any earlier in-flight polling loop.
+   */
   async function pollSwapStatus(hash: string) {
     if (!from || !to || !active) return;
-    setStatusText('Processing on source chain…');
-    const MAX = 60;
-    for (let i = 0; i < MAX; i++) {
+    const mySeq = ++pollSeqRef.current;
+    const fromAmt = amount.trim();
+    const req = {
+      fromChainId: from.chain.chainId,
+      toChainId: to.chain.chainId,
+      fromTokenAddress: from.token.tokenContractAddress,
+      toTokenAddress: to.token.tokenContractAddress,
+      fromAddress: active.address,
+      toAddress: active.address,
+      fromAmount: fromAmt,
+      hash,
+    };
+    setStatusPolling(true);
+    const MAX_ATTEMPTS = 120; // 5s × 120 = 10 min
+    for (let i = 0; i < MAX_ATTEMPTS; i++) {
       await new Promise((r) => setTimeout(r, 5000));
+      if (mySeq !== pollSeqRef.current) return; // superseded by a newer swap
       try {
-        const status = await getStatus({
-          fromChainId: from.chain.chainId,
-          toChainId: to.chain.chainId,
-          fromTokenAddress: from.token.tokenContractAddress,
-          toTokenAddress: to.token.tokenContractAddress,
-          fromAddress: active.address,
-          toAddress: active.address,
-          fromAmount: amount.trim(),
-          hash,
-        });
-        setStatusText(`${status.statusMsg}${status.receiveAmount ? ` · received ${status.receiveAmount} ${to.token.tokenSymbol}` : ''}`);
-        if (status.statusCode === 1) return;
-        if (status.statusCode === 2 || status.statusCode === 4 || status.statusCode === 5 || status.statusCode === 7) return;
-      } catch (e) {
-        // Source tx may not be indexed yet — keep polling.
+        const status = await getStatus(req);
+        if (mySeq !== pollSeqRef.current) return;
+        setSwapStatus(status);
+        if (isTerminalStatus(status.statusCode)) {
+          setStatusPolling(false);
+          return;
+        }
+      } catch {
+        // Source tx may not be indexed yet — keep polling silently.
       }
     }
+    if (mySeq === pollSeqRef.current) setStatusPolling(false);
   }
 
   if (unlocked === false) {
@@ -495,30 +523,17 @@ export function SwapPage() {
         </div>
 
         {/* Live stage feedback */}
-        {stage.kind === 'submitted' && (() => {
-          const sourceExplorer = from
-            ? networks.find((n) => n.chainId === from.chain.chainId)?.blockExplorerUrl
-            : undefined;
-          const txUrl = sourceExplorer ? `${sourceExplorer}/tx/${stage.hash}` : undefined;
-          return (
-            <div className="swap-status">
-              <div className="swap-status-line">
-                <SwapIcon size={14} /> Source tx submitted:&nbsp;
-                {txUrl ? (
-                  <a className="tx-link" href={txUrl} target="_blank" rel="noopener noreferrer">
-                    {stage.hash.slice(0, 12)}…{stage.hash.slice(-8)}
-                    <ExternalLinkIcon size={11} className="tx-link-icon" />
-                  </a>
-                ) : (
-                  <span className="tx-link" style={{ cursor: 'default' }}>
-                    {stage.hash.slice(0, 12)}…{stage.hash.slice(-8)}
-                  </span>
-                )}
-              </div>
-              {statusText && <div className="swap-status-detail">{statusText}</div>}
-            </div>
-          );
-        })()}
+        {stage.kind === 'submitted' && from && to && (
+          <SwapStatusCard
+            sourceHash={stage.hash}
+            status={swapStatus}
+            polling={statusPolling}
+            sourceChainId={from.chain.chainId}
+            destChainId={to.chain.chainId}
+            destSymbol={to.token.tokenSymbol}
+            networks={networks}
+          />
+        )}
         {stage.kind === 'error' && (
           <div className="swap-status swap-status-error">
             {stage.message}
@@ -681,4 +696,160 @@ function trimAmount(s: string, maxDecimals: number): string {
 
 function shortAddr(a: string): string {
   return `${a.slice(0, 6)}…${a.slice(-4)}`;
+}
+
+// --- Status display ---
+
+function isTerminalStatus(code: number): boolean {
+  // 1 Success, 2 Failed, 4 Refunded (source), 5 Refunded (Wanchain),
+  // 7 Risk transaction. 3 (Processing) and 6 (Trusteeship) keep polling.
+  return code === 1 || code === 2 || code === 4 || code === 5 || code === 7;
+}
+
+type StepState = 'done' | 'active' | 'pending' | 'failed';
+
+interface StepDescriptor {
+  label: string;
+  state: StepState;
+  hash?: string;
+  chainId?: number;
+  hint?: string;
+}
+
+interface StatusCardProps {
+  sourceHash: string;
+  status: XfStatus | null;
+  polling: boolean;
+  sourceChainId: number;
+  destChainId: number;
+  destSymbol: string;
+  networks: Network[];
+}
+
+function SwapStatusCard({
+  sourceHash, status, polling, sourceChainId, destChainId, destSymbol, networks,
+}: StatusCardProps) {
+  const sourceExplorer = networks.find((n) => n.chainId === sourceChainId)?.blockExplorerUrl;
+  const destExplorer = networks.find((n) => n.chainId === destChainId)?.blockExplorerUrl;
+
+  // Per-step status. The first step is always "done" because we have the
+  // source hash already. The bridge step shows "active" until /status reports
+  // a terminal code. The destination step turns "done" once we receive a
+  // `destinationHash`, or jumps straight to "failed" on a refund/failure.
+  const code = status?.statusCode;
+  const terminal = code !== undefined && isTerminalStatus(code);
+  const success = code === 1;
+  const refunded = code === 4 || code === 5;
+  const failed = code === 2 || code === 7;
+
+  const steps: StepDescriptor[] = [
+    {
+      label: 'Source transaction submitted',
+      state: 'done',
+      hash: sourceHash,
+      chainId: sourceChainId,
+    },
+    {
+      label: refunded
+        ? 'Refunded'
+        : failed
+          ? 'Bridge failed'
+          : terminal
+            ? 'Bridge processed'
+            : 'Bridging across chains',
+      state: refunded || failed
+        ? 'failed'
+        : status?.destinationHash || (terminal && success)
+          ? 'done'
+          : 'active',
+      hint: code === 6 ? 'Trusteeship — contact techsupport@wanchain.org' : undefined,
+    },
+    {
+      label: status?.destinationHash
+        ? `Received on destination chain${status.receiveAmount ? ` · ${formatLooseAmount(status.receiveAmount)} ${destSymbol}` : ''}`
+        : refunded
+          ? 'No destination delivery'
+          : failed
+            ? 'Destination not reached'
+            : 'Waiting for destination delivery',
+      state: status?.destinationHash
+        ? 'done'
+        : refunded || failed
+          ? 'failed'
+          : terminal && success
+            ? 'done'
+            : 'pending',
+      hash: status?.destinationHash,
+      chainId: destChainId,
+    },
+  ];
+
+  const banner = (() => {
+    if (success) {
+      return { kind: 'success' as const, text: `Swap complete${status?.receiveAmount ? ` — received ${formatLooseAmount(status!.receiveAmount!)} ${destSymbol}` : ''}` };
+    }
+    if (refunded) return { kind: 'warn' as const, text: 'Refunded — funds returned to your address' };
+    if (failed) return { kind: 'error' as const, text: status?.statusMsg ?? 'Swap failed' };
+    if (code === 6) return { kind: 'warn' as const, text: 'Trusteeship — manual review required' };
+    return { kind: 'info' as const, text: polling ? 'Tracking swap status…' : 'Status polling stopped' };
+  })();
+
+  return (
+    <div className="swap-status-card">
+      <div className={`swap-status-banner is-${banner.kind}`}>
+        {polling && !terminal && <span className="swap-status-spinner" aria-hidden />}
+        <span>{banner.text}</span>
+      </div>
+
+      <ol className="swap-steps">
+        {steps.map((step, idx) => (
+          <li key={idx} className={`swap-step is-${step.state}`}>
+            <span className="swap-step-dot" />
+            <div className="swap-step-body">
+              <div className="swap-step-label">{step.label}</div>
+              {step.hash && (
+                <TxLink hash={step.hash} explorerUrl={
+                  step.chainId === sourceChainId ? sourceExplorer : destExplorer
+                } />
+              )}
+              {step.hint && <div className="swap-step-hint">{step.hint}</div>}
+            </div>
+          </li>
+        ))}
+      </ol>
+
+      {status?.refundHash && (
+        <div className="swap-status-extra">
+          Refund tx:&nbsp;
+          <TxLink hash={status.refundHash} explorerUrl={sourceExplorer} />
+        </div>
+      )}
+      {status?.swapHash && status.swapHash !== status.destinationHash && (
+        <div className="swap-status-extra">
+          Swap tx:&nbsp;
+          <TxLink hash={status.swapHash} explorerUrl={destExplorer} />
+        </div>
+      )}
+    </div>
+  );
+}
+
+function TxLink({ hash, explorerUrl }: { hash: string; explorerUrl?: string }) {
+  const short = `${hash.slice(0, 12)}…${hash.slice(-8)}`;
+  if (!explorerUrl) {
+    return <span className="tx-link" style={{ cursor: 'default' }}>{short}</span>;
+  }
+  return (
+    <a className="tx-link" href={`${explorerUrl}/tx/${hash}`} target="_blank" rel="noopener noreferrer">
+      {short}
+      <ExternalLinkIcon size={11} className="tx-link-icon" />
+    </a>
+  );
+}
+
+function formatLooseAmount(s: string): string {
+  const n = parseFloat(s);
+  if (!isFinite(n) || n === 0) return s;
+  if (n >= 1) return n.toLocaleString('en-US', { maximumFractionDigits: 6 });
+  return n.toFixed(8).replace(/\.?0+$/, '');
 }

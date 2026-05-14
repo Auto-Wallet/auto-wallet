@@ -2531,6 +2531,145 @@ body:has(.swap-shell) {
   justify-content: space-between;
 }
 
+/* --- Structured swap status card with stage progress --- */
+.swap-status-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  padding: 14px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  box-shadow: var(--shadow-xs);
+}
+.swap-status-banner {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  padding: 8px 12px;
+  border-radius: var(--radius-sm);
+}
+.swap-status-banner.is-info {
+  background: var(--accent-subtle);
+  color: var(--accent);
+}
+.swap-status-banner.is-success {
+  background: var(--success-bg);
+  color: var(--success);
+}
+.swap-status-banner.is-warn {
+  background: var(--warning-bg);
+  color: var(--warning);
+}
+.swap-status-banner.is-error {
+  background: var(--danger-bg);
+  color: var(--danger);
+}
+.swap-status-spinner {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  border: 2px solid currentColor;
+  border-top-color: transparent;
+  animation: swap-spin 0.9s linear infinite;
+  flex-shrink: 0;
+}
+@keyframes swap-spin {
+  to { transform: rotate(360deg); }
+}
+
+.swap-steps {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.swap-step {
+  position: relative;
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding-left: 4px;
+}
+/* Vertical connector between dots */
+.swap-step::before {
+  content: '';
+  position: absolute;
+  left: 9px;
+  top: 18px;
+  bottom: -14px;
+  width: 2px;
+  background: var(--border-subtle);
+}
+.swap-step:last-child::before { display: none; }
+
+.swap-step-dot {
+  width: 12px;
+  height: 12px;
+  margin-top: 4px;
+  border-radius: 50%;
+  background: var(--border-default);
+  border: 2px solid var(--bg-card);
+  box-shadow: 0 0 0 2px var(--border-subtle);
+  flex-shrink: 0;
+  position: relative;
+  z-index: 1;
+}
+.swap-step.is-done .swap-step-dot {
+  background: var(--success);
+  box-shadow: 0 0 0 2px var(--success-bg);
+}
+.swap-step.is-active .swap-step-dot {
+  background: var(--accent);
+  box-shadow: 0 0 0 2px var(--accent-subtle);
+  animation: swap-pulse 1.4s ease-in-out infinite;
+}
+.swap-step.is-failed .swap-step-dot {
+  background: var(--danger);
+  box-shadow: 0 0 0 2px var(--danger-bg);
+}
+@keyframes swap-pulse {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.25); }
+}
+
+.swap-step-body {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+  flex: 1;
+}
+.swap-step-label {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+.swap-step.is-pending .swap-step-label {
+  color: var(--text-muted);
+  font-weight: 500;
+}
+.swap-step.is-failed .swap-step-label {
+  color: var(--danger);
+}
+.swap-step-hint {
+  font-size: 11px;
+  color: var(--warning);
+}
+
+.swap-status-extra {
+  font-size: 11px;
+  color: var(--text-secondary);
+  display: inline-flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
 /* ============================================================
    Token Picker (relay.link-style chains-on-left / tokens-on-right)
    ============================================================ */
