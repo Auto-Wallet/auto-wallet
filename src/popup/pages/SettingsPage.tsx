@@ -3,6 +3,7 @@ import { callBackground } from '../api';
 import type { WalletSettings, ThemePreference } from '../../types/settings';
 import type { AccountSource, AccountType } from '../../lib/key-manager.core';
 import { SunIcon, MoonIcon, MonitorIcon } from '../icons';
+import { DeleteDangerModal } from '../DeleteDangerModal';
 
 interface AccountInfo {
   id: string;
@@ -27,6 +28,7 @@ const LOCK_OPTIONS = [
 export function SettingsPage() {
   const [settings, setSettings] = useState<WalletSettings | null>(null);
   const [deleteConfirm, setDeleteConfirm] = useState(false);
+  const [dangerOpen, setDangerOpen] = useState(false);
   const [saved, setSaved] = useState(false);
 
   // Export private key state
@@ -81,10 +83,25 @@ export function SettingsPage() {
     setTimeout(() => setCopied(false), 2000);
   }
 
-  async function handleDeleteAll() {
-    if (!deleteConfirm) { setDeleteConfirm(true); return; }
+  async function executeDeleteAll() {
     await callBackground('deleteWallet');
     window.location.reload();
+  }
+
+  async function handleDeleteAll() {
+    // If any account stores a private key on this device (privateKey or
+    // mnemonic source), require the 3-step backup-acknowledgement flow.
+    // If the wallet only has Ledger / watch-only accounts, the legacy
+    // inline two-click confirm is sufficient.
+    const hasSigningKey = accounts.some(
+      (a) => a.source === 'privateKey' || a.source === 'mnemonic',
+    );
+    if (hasSigningKey) {
+      setDangerOpen(true);
+      return;
+    }
+    if (!deleteConfirm) { setDeleteConfirm(true); return; }
+    await executeDeleteAll();
   }
 
   if (!settings) {
@@ -322,6 +339,16 @@ export function SettingsPage() {
           )}
         </div>
       </div>
+
+      <DeleteDangerModal
+        open={dangerOpen}
+        title="Delete all accounts?"
+        subject="every account in this wallet"
+        destructiveLabel="Delete everything"
+        plural
+        onCancel={() => setDangerOpen(false)}
+        onConfirm={() => { setDangerOpen(false); void executeDeleteAll(); }}
+      />
     </div>
   );
 }
