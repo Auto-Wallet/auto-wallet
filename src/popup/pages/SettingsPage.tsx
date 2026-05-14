@@ -236,7 +236,7 @@ export function SettingsPage() {
           <div style={{ flex: 1 }}>
             <p style={{ fontSize: 12, fontWeight: 500, color: 'var(--text-primary)' }}>USD prices</p>
             <p style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>
-              Fetch native and ERC-20 prices from CoinGecko (cached 15 min)
+              Fetch native and ERC-20 prices from CoinGecko (cached 60 min)
             </p>
           </div>
           <button
