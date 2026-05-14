@@ -371,8 +371,9 @@ export function SwapPage() {
     };
     setStatusPolling(true);
     const MAX_ATTEMPTS = 120; // 5s × 120 = 10 min
+    // First check fires immediately so users see real status as soon as the
+    // source tx is indexed; subsequent checks wait 5s between attempts.
     for (let i = 0; i < MAX_ATTEMPTS; i++) {
-      await new Promise((r) => setTimeout(r, 5000));
       if (mySeq !== pollSeqRef.current) return; // superseded by a newer swap
       try {
         const status = await getStatus(req);
@@ -384,6 +385,9 @@ export function SwapPage() {
         }
       } catch {
         // Source tx may not be indexed yet — keep polling silently.
+      }
+      if (i < MAX_ATTEMPTS - 1) {
+        await new Promise((r) => setTimeout(r, 5000));
       }
     }
     if (mySeq === pollSeqRef.current) setStatusPolling(false);
@@ -425,7 +429,16 @@ export function SwapPage() {
                 className="swap-amount-input"
                 placeholder="0.0"
                 value={amount}
-                onChange={(e) => setAmount(e.target.value.replace(/[^0-9.]/g, ''))}
+                onChange={(e) => {
+                  // Strip non-numerics, then keep at most one decimal point so
+                  // `parseUnits` never receives "1.2.3" and throws downstream.
+                  const cleaned = e.target.value.replace(/[^0-9.]/g, '');
+                  const firstDot = cleaned.indexOf('.');
+                  const normalized = firstDot === -1
+                    ? cleaned
+                    : cleaned.slice(0, firstDot + 1) + cleaned.slice(firstDot + 1).replace(/\./g, '');
+                  setAmount(normalized);
+                }}
               />
               <button className="swap-token-pill" onClick={() => setPicker('from')} type="button">
                 {from ? (

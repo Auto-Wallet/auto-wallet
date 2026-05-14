@@ -120,43 +120,49 @@ export function TokenPicker({
   }, [tokensByChain, visibleChains, selectedChainId, tokenQuery]);
 
   /**
-   * Lazy-load balances for tokens on the currently-selected chain. Capped to
-   * avoid RPC storms — 'All Chains' would mean hundreds of calls, so we skip
-   * it entirely and only fetch when a specific chain is selected.
+   * Lazy-load balances for tokens on the currently-selected chain via
+   * multicall3 (one round-trip for all ERC20s + one native call). Skipped for
+   * 'All Chains' to avoid querying every supported chain at once.
+   *
+   * `fetchedRef` is per-chain so switching chains triggers a fresh fetch
+   * without re-fetching the chain you came from.
    */
-  const fetchedRef = useRef<Set<string>>(new Set());
+  const fetchedRef = useRef<Set<number>>(new Set());
   useEffect(() => {
     if (!showBalances || !ownerAddress) return;
     if (selectedChainId === ALL_CHAINS) return;
-    const tokens = (tokensByChain.get(selectedChainId) ?? []).slice(0, 24);
+    if (fetchedRef.current.has(selectedChainId)) return;
+    const tokens = (tokensByChain.get(selectedChainId) ?? []).slice(0, 50);
     if (tokens.length === 0) return;
+    fetchedRef.current.add(selectedChainId);
     let cancelled = false;
     (async () => {
-      // Fetch in small batches to keep the picker responsive.
-      for (const t of tokens) {
-        const key = `${selectedChainId}:${t.tokenContractAddress.toLowerCase()}`;
-        if (fetchedRef.current.has(key)) continue;
-        fetchedRef.current.add(key);
-        try {
-          const info = await callBackground<{ balance: string; balanceRaw: string; decimals: number }>(
-            'getBalanceForChain',
-            {
-              chainId: selectedChainId,
-              tokenAddress: t.tokenContractAddress,
-              owner: ownerAddress,
-            },
-          );
-          if (cancelled) return;
-          const raw = BigInt(info.balanceRaw);
-          if (raw === 0n) continue;
-          setBalances((prev) => {
-            const next = new Map(prev);
-            next.set(key, { raw, formatted: info.balance });
-            return next;
-          });
-        } catch {
-          // Skip silently; balance lookup is best-effort.
-        }
+      try {
+        const results = await callBackground<Array<{ address: string; balance: string; balanceRaw: string }>>(
+          'getBalancesBatch',
+          {
+            chainId: selectedChainId,
+            owner: ownerAddress,
+            tokens: tokens.map((t) => ({
+              address: t.tokenContractAddress,
+              decimals: Number(t.decimals),
+            })),
+          },
+        );
+        if (cancelled) return;
+        setBalances((prev) => {
+          const next = new Map(prev);
+          for (const r of results) {
+            const raw = BigInt(r.balanceRaw);
+            if (raw === 0n) continue;
+            const key = `${selectedChainId}:${r.address.toLowerCase()}`;
+            next.set(key, { raw, formatted: r.balance });
+          }
+          return next;
+        });
+      } catch {
+        // Drop the marker so the next selection retries.
+        fetchedRef.current.delete(selectedChainId);
       }
     })();
     return () => { cancelled = true; };

@@ -6,6 +6,7 @@ import * as txLogger from '../lib/tx-logger';
 import * as addressBook from '../lib/address-book';
 import { getClient } from '../lib/network-manager';
 import { handleRpcMethod } from './rpc-handler';
+import { getMulticall3Address } from '../lib/multicall';
 import { getItem, setItem, STORAGE_KEYS } from '../lib/storage';
 import {
   formatEther, formatUnits, parseEther, parseUnits, encodeFunctionData, erc20Abi, hexToBigInt,
@@ -348,6 +349,79 @@ export async function handlePopupAction(action: string, payload: any): Promise<u
         balance: formatUnits(rawBalance as bigint, d),
       };
     }
+    /**
+     * Batched balance lookup: one multicall3 round-trip for ERC20s + one
+     * `getBalance` for native (if requested), instead of N sequential reads.
+     * Used by the Swap token picker so balances for ~50 tokens land in a
+     * single network call.
+     *
+     * Falls back to parallel per-token reads on chains where we don't have a
+     * known multicall3 deployment.
+     */
+    case 'getBalancesBatch': {
+      const chainId = Number(payload.chainId);
+      const owner = payload.owner as `0x${string}`;
+      const tokens = payload.tokens as Array<{ address: string; decimals: number }>;
+      const client = await getClient(chainId);
+      const multicallAddress = getMulticall3Address(chainId);
+
+      const isNative = (a: string) => /^0x0+$/.test(a);
+      const nativeReq = tokens.find((t) => isNative(t.address));
+      const erc20Reqs = tokens.filter((t) => !isNative(t.address));
+
+      // Native balance is always a single eth_call — multicall doesn't help.
+      const nativePromise = nativeReq
+        ? client.getBalance({ address: owner }).then((raw) => ({
+            address: nativeReq.address,
+            balanceRaw: raw.toString(),
+            balance: formatEther(raw),
+          }))
+        : null;
+
+      let erc20Results: Array<{ address: string; balanceRaw: string; balance: string }> = [];
+      if (erc20Reqs.length > 0) {
+        if (multicallAddress) {
+          const calls = erc20Reqs.map((t) => ({
+            address: t.address as `0x${string}`,
+            abi: erc20Abi,
+            functionName: 'balanceOf' as const,
+            args: [owner],
+          }));
+          const raws = await client.multicall({
+            contracts: calls,
+            multicallAddress,
+            allowFailure: true,
+          });
+          erc20Results = erc20Reqs.map((t, i) => {
+            const r = raws[i];
+            const raw = r && r.status === 'success' ? (r.result as bigint) : 0n;
+            return {
+              address: t.address,
+              balanceRaw: raw.toString(),
+              balance: formatUnits(raw, t.decimals),
+            };
+          });
+        } else {
+          // No multicall3 deployment we trust — fan out in parallel.
+          erc20Results = await Promise.all(erc20Reqs.map(async (t) => {
+            try {
+              const raw = await client.readContract({
+                address: t.address as `0x${string}`,
+                abi: erc20Abi,
+                functionName: 'balanceOf',
+                args: [owner],
+              }) as bigint;
+              return { address: t.address, balanceRaw: raw.toString(), balance: formatUnits(raw, t.decimals) };
+            } catch {
+              return { address: t.address, balanceRaw: '0', balance: '0' };
+            }
+          }));
+        }
+      }
+
+      const native = nativePromise ? await nativePromise : null;
+      return native ? [native, ...erc20Results] : erc20Results;
+    }
     case 'getErc20Allowance': {
       const chainId = Number(payload.chainId);
       const tokenAddress = payload.tokenAddress as `0x${string}`;
@@ -383,7 +457,11 @@ export async function handlePopupAction(action: string, payload: any): Promise<u
           emitChainChanged(toHex(switched.chainId));
         }
       }
-      return handleRpcMethod('eth_sendTransaction', [tx], origin, {} as chrome.runtime.MessageSender);
+      const sender: chrome.runtime.MessageSender = {
+        id: chrome.runtime.id,
+        url: chrome.runtime.getURL('swap.html'),
+      };
+      return handleRpcMethod('eth_sendTransaction', [tx], origin, sender);
     }
 
     // --- Settings ---
