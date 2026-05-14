@@ -65,7 +65,14 @@ export default function App() {
 
   useEffect(() => {
     function handleClick(e: MouseEvent) {
-      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
+      const target = e.target as Element | null;
+      // Modals (DeleteDangerModal, ReceiveModal, etc.) use position: fixed
+      // and visually live outside the menu, but they're still part of the
+      // app's logical interaction surface. Treat any click inside a modal
+      // overlay as "inside" so clicking modal buttons doesn't tear down the
+      // parent menu that owns the modal.
+      if (target?.closest('.receive-modal-overlay')) return;
+      if (menuRef.current && !menuRef.current.contains(target as Node)) {
         setShowAccountMenu(false);
       }
     }
