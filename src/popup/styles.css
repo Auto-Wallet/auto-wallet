@@ -3076,3 +3076,50 @@ body:has(.swap-shell) {
   color: var(--text-muted);
   font-size: 12px;
 }
+
+/* --- Networks (Chains) page --- */
+.network-star-btn {
+  width: 24px;
+  height: 24px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  color: var(--text-muted);
+  opacity: .55;
+  transition: opacity .12s ease, color .12s ease, background .12s ease;
+  flex-shrink: 0;
+}
+.network-card:hover .network-star-btn { opacity: 1; }
+.network-star-btn:hover { background: var(--accent-subtle); color: var(--accent); }
+.network-star-btn.is-starred {
+  color: var(--accent);
+  opacity: 1;
+}
+.network-star-btn.is-starred svg { fill: currentColor; }
+
+/* Stronger active state for the selected chain card. The base `.card-active`
+ * only adds a faint glow, which is easy to miss in a long list — this layers
+ * an accent-tinted background and a left rail so the active row is obvious. */
+.card.network-card-active {
+  background: var(--accent-subtle);
+  border-color: var(--border-active);
+  box-shadow: var(--shadow-sm), var(--shadow-glow);
+  position: relative;
+  overflow: hidden;
+}
+.card.network-card-active::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 3px;
+  background: var(--accent);
+}
+.card.network-card-active:hover {
+  background: var(--accent-subtle);
+}

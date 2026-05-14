@@ -252,6 +252,14 @@ export async function handlePopupAction(action: string, payload: any): Promise<u
       return networkManager.updateNetwork(payload as Network);
     case 'removeCustomNetwork':
       return networkManager.removeCustomNetwork(payload.chainId);
+    case 'getStarredNetworks': {
+      return (await getItem<number[]>(STORAGE_KEYS.STARRED_NETWORKS)) ?? [];
+    }
+    case 'setStarredNetworks': {
+      const next = (payload.chainIds as number[]) ?? [];
+      await setItem(STORAGE_KEYS.STARRED_NETWORKS, next);
+      return next;
+    }
 
     // --- Whitelist ---
     case 'getRules':
