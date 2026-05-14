@@ -34,4 +34,6 @@ export const STORAGE_KEYS = {
   PRICES_CACHE: 'prices_cache',
   /** Chain IDs the user has starred on the Swap page's token picker. */
   SWAP_STARRED_CHAINS: 'swap_starred_chains',
+  /** Chain IDs the user has pinned to the top on the Networks (Chains) page. */
+  STARRED_NETWORKS: 'starred_networks',
 } as const;

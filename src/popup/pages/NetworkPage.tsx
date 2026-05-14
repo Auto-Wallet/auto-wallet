@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { callBackground } from '../api';
 import type { Network } from '../../types/network';
-import { SearchIcon, CloseIcon } from '../icons';
+import { SearchIcon, CloseIcon, StarIcon } from '../icons';
 
 export function NetworkPage() {
   const [networks, setNetworks] = useState<Network[]>([]);
@@ -10,17 +10,30 @@ export function NetworkPage() {
   const [editingNetwork, setEditingNetwork] = useState<Network | null>(null);
   const [search, setSearch] = useState('');
   const [confirmDeleteChainId, setConfirmDeleteChainId] = useState<number | null>(null);
+  const [starred, setStarred] = useState<Set<number>>(new Set());
   const [form, setForm] = useState({ chainId: '', name: '', rpcUrl: '', symbol: '', decimals: '18', blockExplorerUrl: '' });
 
   useEffect(() => { loadNetworks(); }, []);
 
   async function loadNetworks() {
-    const [nets, act] = await Promise.all([
+    const [nets, act, starredIds] = await Promise.all([
       callBackground<Network[]>('getNetworks'),
       callBackground<Network>('getActiveNetwork'),
+      callBackground<number[]>('getStarredNetworks').catch(() => [] as number[]),
     ]);
     setNetworks(nets);
     setActive(act.chainId);
+    setStarred(new Set(starredIds ?? []));
+  }
+
+  function toggleStar(chainId: number) {
+    setStarred((prev) => {
+      const next = new Set(prev);
+      if (next.has(chainId)) next.delete(chainId);
+      else next.add(chainId);
+      callBackground('setStarredNetworks', { chainIds: Array.from(next) }).catch(() => {});
+      return next;
+    });
   }
 
   const filtered = useMemo(() => {
@@ -32,10 +45,18 @@ export function NetworkPage() {
           String(n.chainId).includes(q)
         )
       : networks;
-    return [...matched].sort((a, b) =>
-      a.name.localeCompare(b.name, undefined, { sensitivity: 'base' })
-    );
-  }, [networks, search]);
+    return [...matched].sort((a, b) => {
+      const aStar = starred.has(a.chainId) ? 1 : 0;
+      const bStar = starred.has(b.chainId) ? 1 : 0;
+      if (aStar !== bStar) return bStar - aStar;
+      return a.name.localeCompare(b.name, undefined, { sensitivity: 'base' });
+    });
+  }, [networks, search, starred]);
+
+  const firstUnstarredChainId = useMemo(() => {
+    const n = filtered.find((x) => !starred.has(x.chainId));
+    return n ? n.chainId : null;
+  }, [filtered, starred]);
 
   async function switchTo(chainId: number) {
     await callBackground('switchNetwork', { chainId });
@@ -157,29 +178,55 @@ export function NetworkPage() {
         </div>
       )}
 
-      {filtered.map((n) => (
-        <div
-          key={n.chainId}
-          className={`card card-clickable ${n.chainId === active ? 'card-active' : ''}`}
-          onClick={() => switchTo(n.chainId)}
-        >
-          <div className="row row-between">
-            <div style={{ minWidth: 0, flex: 1 }}>
-              <div style={{ fontSize: 13, fontWeight: 500 }}>{n.name}</div>
-              <div className="mono" style={{ fontSize: 10, color: 'var(--text-muted)', marginTop: 2 }}>
-                Chain {n.chainId} &middot; {n.symbol}
+      {!search && starred.size > 0 && filtered.some((n) => starred.has(n.chainId)) && (
+        <div className="section-label" style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+          <StarIcon size={9} /> Pinned
+        </div>
+      )}
+
+      {filtered.map((n) => {
+        const isStarred = starred.has(n.chainId);
+        const isActive = n.chainId === active;
+        const showAzDivider = !search && starred.size > 0 && n.chainId === firstUnstarredChainId;
+        return (
+          <React.Fragment key={n.chainId}>
+            {showAzDivider && (
+              <div className="section-label" style={{ marginTop: 4 }}>All Chains</div>
+            )}
+            <div
+              className={`card card-clickable network-card ${isActive ? 'card-active network-card-active' : ''}`}
+              onClick={() => switchTo(n.chainId)}
+            >
+              <div className="row row-between">
+                <div className="row gap-sm" style={{ minWidth: 0, flex: 1 }}>
+                  <button
+                    type="button"
+                    onClick={(e) => { e.stopPropagation(); toggleStar(n.chainId); }}
+                    className={`network-star-btn ${isStarred ? 'is-starred' : ''}`}
+                    aria-label={isStarred ? 'Unpin chain' : 'Pin chain to top'}
+                    title={isStarred ? 'Unpin chain' : 'Pin chain to top'}
+                  >
+                    <StarIcon size={12} />
+                  </button>
+                  <div style={{ minWidth: 0, flex: 1 }}>
+                    <div style={{ fontSize: 13, fontWeight: isActive ? 600 : 500 }}>{n.name}</div>
+                    <div className="mono" style={{ fontSize: 10, color: 'var(--text-muted)', marginTop: 2 }}>
+                      Chain {n.chainId} &middot; {n.symbol}
+                    </div>
+                  </div>
+                </div>
+                <div className="row gap-sm">
+                  {isActive && <span className="pulse-dot" />}
+                  <button onClick={(e) => { e.stopPropagation(); openEditForm(n); }} className="btn-ghost accent">Edit</button>
+                  <button onClick={(e) => { e.stopPropagation(); removeNetwork(n.chainId); }} className="btn-ghost danger">
+                    {confirmDeleteChainId === n.chainId ? 'Confirm' : 'Del'}
+                  </button>
+                </div>
               </div>
             </div>
-            <div className="row gap-sm">
-              {n.chainId === active && <span className="pulse-dot" />}
-              <button onClick={(e) => { e.stopPropagation(); openEditForm(n); }} className="btn-ghost accent">Edit</button>
-              <button onClick={(e) => { e.stopPropagation(); removeNetwork(n.chainId); }} className="btn-ghost danger">
-                {confirmDeleteChainId === n.chainId ? 'Confirm' : 'Del'}
-              </button>
-            </div>
-          </div>
-        </div>
-      ))}
+          </React.Fragment>
+        );
+      })}
     </div>
   );
 }
