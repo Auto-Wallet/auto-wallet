@@ -24,11 +24,15 @@ export function NetworkPage() {
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
-    if (!q) return networks;
-    return networks.filter((n) =>
-      n.name.toLowerCase().includes(q) ||
-      n.symbol.toLowerCase().includes(q) ||
-      String(n.chainId).includes(q)
+    const matched = q
+      ? networks.filter((n) =>
+          n.name.toLowerCase().includes(q) ||
+          n.symbol.toLowerCase().includes(q) ||
+          String(n.chainId).includes(q)
+        )
+      : networks;
+    return [...matched].sort((a, b) =>
+      a.name.localeCompare(b.name, undefined, { sensitivity: 'base' })
     );
   }, [networks, search]);
 

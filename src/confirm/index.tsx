@@ -72,6 +72,7 @@ interface PendingRequest {
   signerAddress?: string;
   chainId?: number;
   chainName?: string;
+  nativeSymbol?: string;
   ledger?: LedgerCtx;
   simulation?: SimulationPreview;
   simulationPending?: boolean;
@@ -94,10 +95,14 @@ function shortAddress(value?: string): string {
   return `${value.slice(0, 6)}...${value.slice(-4)}`;
 }
 
-function resolveStoredChainName(chainId: number, callback: (name: string | undefined) => void): void {
+function resolveStoredChainInfo(
+  chainId: number,
+  callback: (info: { name?: string; symbol?: string }) => void,
+): void {
   chrome.storage.local.get(STORAGE_KEYS.NETWORKS, (result) => {
     const stored = (result[STORAGE_KEYS.NETWORKS] as Network[] | undefined) ?? [];
-    callback(findNetwork(stored, chainId)?.name);
+    const network = findNetwork(stored, chainId);
+    callback({ name: network?.name, symbol: network?.symbol });
   });
 }
 
@@ -231,9 +236,15 @@ function ConfirmPage() {
         ? { ...stored, simulation: earlySim, simulationPending: false }
         : stored;
       setRequest(initial);
-      if (initial.chainId && !initial.chainName) {
-        resolveStoredChainName(initial.chainId, (chainName) => {
-          if (chainName) setRequest((current) => current ? { ...current, chainName } : current);
+      if (initial.chainId && (!initial.chainName || !initial.nativeSymbol)) {
+        resolveStoredChainInfo(initial.chainId, ({ name, symbol }) => {
+          setRequest((current) => {
+            if (!current) return current;
+            const next = { ...current };
+            if (!next.chainName && name) next.chainName = name;
+            if (!next.nativeSymbol && symbol) next.nativeSymbol = symbol;
+            return next;
+          });
         });
       }
     });
@@ -420,6 +431,7 @@ function ConfirmPage() {
   const isAddChain = request.method === 'wallet_addEthereumChain';
 
   const value = tx.value ? (parseInt(tx.value, 16) / 1e18).toFixed(6) : '0';
+  const nativeSymbol = request.nativeSymbol ?? 'ETH';
   const to = tx.to ?? 'Contract creation';
   const calldata = tx.data;
   const methodSig = calldata?.slice(0, 10) ?? '-';
@@ -537,7 +549,7 @@ function ConfirmPage() {
             <div className="confirm-row">
               <div className="confirm-field">
                 <span className="confirm-label">Value</span>
-                <span className="confirm-value-big">{value} ETH</span>
+                <span className="confirm-value-big">{value} {nativeSymbol}</span>
               </div>
               <div className="confirm-field" style={{ textAlign: 'right' }}>
                 <span className="confirm-label">Method</span>

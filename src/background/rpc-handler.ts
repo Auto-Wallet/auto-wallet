@@ -197,6 +197,7 @@ async function checkWhitelistOrConfirm(
   ledger?: LedgerConfirmContext,
   simulationPromise?: Promise<SimulationPreview>,
   chainName?: string,
+  nativeSymbol?: string,
 ): Promise<{
   autoSignResult: whitelist.AutoSignCheckResult;
   feeOverride: FeeOverride | null;
@@ -229,6 +230,7 @@ async function checkWhitelistOrConfirm(
       signerAddress,
       chainId: ctx.chainId,
       chainName,
+      nativeSymbol,
       ledger,
     },
     simulationPromise ? { simulationPromise } : undefined,
@@ -388,6 +390,7 @@ async function handleSendTransaction(params: unknown[], origin: string): Promise
     ledgerCtx,
     simulationPromise,
     network.name,
+    network.symbol,
   );
 
   let hash: `0x${string}`;
@@ -495,6 +498,7 @@ async function handlePersonalSign(params: unknown[], origin: string): Promise<st
     ledgerCtx,
     undefined,
     network.name,
+    network.symbol,
   );
 
   let sig: `0x${string}`;
@@ -550,6 +554,7 @@ async function handleSignTypedData(params: unknown[], origin: string): Promise<s
     ledgerCtx,
     undefined,
     network.name,
+    network.symbol,
   );
 
   let sig: `0x${string}`;

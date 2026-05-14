@@ -66,6 +66,7 @@ export interface ConfirmRequest {
   signerAddress?: string;
   chainId?: number;
   chainName?: string;
+  nativeSymbol?: string;
   ledger?: LedgerConfirmContext;
   simulation?: SimulationPreview;
   /** True when simulation is still running; popup should render a skeleton until
