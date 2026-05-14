@@ -33,4 +33,6 @@ export const STORAGE_KEYS = {
   TX_LOG: 'tx_log',
   SETTINGS: 'settings',
   PRICES_CACHE: 'prices_cache',
+  /** Chain IDs the user has starred on the Swap page's token picker. */
+  SWAP_STARRED_CHAINS: 'swap_starred_chains',
 } as const;

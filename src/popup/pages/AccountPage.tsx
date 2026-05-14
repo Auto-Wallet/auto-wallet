@@ -13,6 +13,7 @@ import type { AccountSource } from '../../lib/key-manager.core';
 import { getPrices, nativePriceKey, tokenPriceKey } from '../../lib/price-manager';
 import {
   SendIcon, ReceiveIcon, RefreshIcon, CopyIcon, CheckIcon, ExternalLinkIcon, PlusIcon, CloseIcon,
+  SwapIcon,
 } from '../icons';
 import { ReceiveModal } from '../ReceiveModal';
 
@@ -476,7 +477,7 @@ export function AccountPage({ onLock }: { onLock: () => void }) {
       </div>
 
       {/* Primary actions */}
-      <div className="hero-actions">
+      <div className="hero-actions hero-actions-3">
         <button onClick={openSendNative} className="action-btn">
           <span className="action-btn-icon"><SendIcon size={16} /></span>
           Send
@@ -484,6 +485,13 @@ export function AccountPage({ onLock }: { onLock: () => void }) {
         <button onClick={() => setShowReceive(true)} className="action-btn">
           <span className="action-btn-icon"><ReceiveIcon size={16} /></span>
           Receive
+        </button>
+        <button
+          onClick={() => chrome.tabs.create({ url: chrome.runtime.getURL('swap.html') })}
+          className="action-btn"
+        >
+          <span className="action-btn-icon"><SwapIcon size={16} /></span>
+          Swap
         </button>
       </div>
 

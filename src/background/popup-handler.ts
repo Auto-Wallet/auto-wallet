@@ -5,6 +5,7 @@ import * as tokenManager from '../lib/token-manager';
 import * as txLogger from '../lib/tx-logger';
 import * as addressBook from '../lib/address-book';
 import { getClient } from '../lib/network-manager';
+import { handleRpcMethod } from './rpc-handler';
 import { getItem, setItem, STORAGE_KEYS } from '../lib/storage';
 import {
   formatEther, formatUnits, parseEther, parseUnits, encodeFunctionData, erc20Abi, hexToBigInt,
@@ -307,6 +308,83 @@ export async function handlePopupAction(action: string, payload: any): Promise<u
       return txLogger.getLog();
     case 'clearTxLog':
       return txLogger.clearLog();
+
+    // --- Swap (XFlows) ---
+    case 'getStarredSwapChains': {
+      return (await getItem<number[]>(STORAGE_KEYS.SWAP_STARRED_CHAINS)) ?? [];
+    }
+    case 'setStarredSwapChains': {
+      const next = (payload.chainIds as number[]) ?? [];
+      await setItem(STORAGE_KEYS.SWAP_STARRED_CHAINS, next);
+      return next;
+    }
+    /**
+     * Read a token balance on an arbitrary chain (not necessarily the active
+     * one). Used by the Swap page where the source chain may differ from the
+     * currently selected wallet chain. `tokenAddress` of zero means native.
+     */
+    case 'getBalanceForChain': {
+      const chainId = Number(payload.chainId);
+      const tokenAddress = payload.tokenAddress as string;
+      const owner = payload.owner as `0x${string}`;
+      const client = await getClient(chainId);
+      if (/^0x0+$/.test(tokenAddress)) {
+        const raw = await client.getBalance({ address: owner });
+        return { decimals: 18, balanceRaw: raw.toString(), balance: formatEther(raw) };
+      }
+      const [decimals, rawBalance] = await Promise.all([
+        client.readContract({ address: tokenAddress as `0x${string}`, abi: erc20Abi, functionName: 'decimals' }).catch(() => 18),
+        client.readContract({
+          address: tokenAddress as `0x${string}`,
+          abi: erc20Abi,
+          functionName: 'balanceOf',
+          args: [owner],
+        }),
+      ]);
+      const d = Number(decimals);
+      return {
+        decimals: d,
+        balanceRaw: (rawBalance as bigint).toString(),
+        balance: formatUnits(rawBalance as bigint, d),
+      };
+    }
+    case 'getErc20Allowance': {
+      const chainId = Number(payload.chainId);
+      const tokenAddress = payload.tokenAddress as `0x${string}`;
+      const owner = payload.owner as `0x${string}`;
+      const spender = payload.spender as `0x${string}`;
+      const client = await getClient(chainId);
+      const allowance = await client.readContract({
+        address: tokenAddress,
+        abi: erc20Abi,
+        functionName: 'allowance',
+        args: [owner, spender],
+      });
+      return (allowance as bigint).toString();
+    }
+    /**
+     * Submit a transaction through the standard confirm popup. Reused by the
+     * Swap page for ERC20 approve and XFlows buildTx calls. Looks identical to a
+     * dApp's `eth_sendTransaction` to the user — including simulation, fee
+     * editing, and Ledger signing — except the origin label.
+     *
+     * Switches the wallet's active chain to `chainId` first so the tx is
+     * sent on the right network. `handleSendTransaction` reads the active
+     * chain to derive the RPC client.
+     */
+    case 'submitTxViaConfirm': {
+      const tx = payload.tx as Record<string, string>;
+      const origin = (payload.origin as string) ?? 'Auto Wallet Swap';
+      if (payload.chainId !== undefined && payload.chainId !== null) {
+        const targetChainId = Number(payload.chainId);
+        const current = await networkManager.getActiveChainId();
+        if (current !== targetChainId) {
+          const switched = await networkManager.switchNetwork(targetChainId);
+          emitChainChanged(toHex(switched.chainId));
+        }
+      }
+      return handleRpcMethod('eth_sendTransaction', [tx], origin, {} as chrome.runtime.MessageSender);
+    }
 
     // --- Settings ---
     case 'getSettings': {

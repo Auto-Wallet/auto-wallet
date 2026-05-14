@@ -225,3 +225,26 @@ export function MonitorIcon(p: IconProps) {
 export function PlusIcon(p: IconProps) {
   return <Svg {...p}><path d="M12 5v14M5 12h14"/></Svg>;
 }
+
+export function SwapIcon(p: IconProps) {
+  return (
+    <Svg {...p}>
+      <path d="M3 7h13"/>
+      <path d="M12 3l4 4l-4 4"/>
+      <path d="M21 17H8"/>
+      <path d="M12 21l-4-4l4-4"/>
+    </Svg>
+  );
+}
+
+export function StarIcon(p: IconProps) {
+  return (
+    <Svg {...p}>
+      <path d="M12 2l2.85 6.95l7.15.65l-5.4 4.7l1.65 7.7L12 17.77L5.75 22l1.65-7.7l-5.4-4.7l7.15-.65z"/>
+    </Svg>
+  );
+}
+
+export function ArrowDownIcon(p: IconProps) {
+  return <Svg {...p}><path d="M12 5v14"/><path d="m6 13l6 6l6-6"/></Svg>;
+}

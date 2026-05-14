@@ -67,6 +67,7 @@ await Promise.all([
   buildEntry('src/confirm/index.tsx', 'confirm.js'),
   buildEntry('src/unlock/index.tsx', 'unlock-page.js'),
   buildEntry('src/ledger-picker/index.tsx', 'ledger-picker.js'),
+  buildEntry('src/swap/index.tsx', 'swap.js'),
 ]);
 
 // Unlock HTML (dApp-triggered unlock popup)
@@ -111,6 +112,21 @@ writeFileSync(join(DIST, 'popup.html'), `<!DOCTYPE html>
 <body>
   <div id="root"></div>
   <script src="popup.js"></script>
+</body>
+</html>`);
+
+// Swap HTML (full-tab cross-chain swap UI)
+writeFileSync(join(DIST, 'swap.html'), `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Swap - Auto Wallet</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <div id="root"></div>
+  <script src="swap.js"></script>
 </body>
 </html>`);
 

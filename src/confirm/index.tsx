@@ -95,6 +95,22 @@ function shortAddress(value?: string): string {
   return `${value.slice(0, 6)}...${value.slice(-4)}`;
 }
 
+/**
+ * BCS API returns `gas_used` as a string that may be hex (`0x5208`) or
+ * decimal (`21000`). Normalize to a decimal display so it's readable.
+ */
+function formatGasUsed(value: string): string {
+  const raw = value.trim();
+  try {
+    const n = raw.startsWith('0x') || raw.startsWith('0X')
+      ? BigInt(raw)
+      : BigInt(raw);
+    return n.toLocaleString('en-US');
+  } catch {
+    return raw;
+  }
+}
+
 function resolveStoredChainInfo(
   chainId: number,
   callback: (info: { name?: string; symbol?: string }) => void,
@@ -200,7 +216,7 @@ function SimulationChanges({
         <p className="simulation-note">No token balance changes detected.</p>
       )}
       {simulation.gasUsed && (
-        <p className="simulation-note">Estimated gas used: {simulation.gasUsed}</p>
+        <p className="simulation-note">Estimated gas used: {formatGasUsed(simulation.gasUsed)}</p>
       )}
     </div>
   );
