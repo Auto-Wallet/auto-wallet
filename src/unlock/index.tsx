@@ -102,5 +102,8 @@ function UnlockPopup() {
   );
 }
 
+import { initTheme } from '../popup/theme';
+initTheme();
+
 const root = createRoot(document.getElementById('root')!);
 root.render(<UnlockPopup />);

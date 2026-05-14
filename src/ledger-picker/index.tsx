@@ -4,6 +4,9 @@ import { createRoot } from 'react-dom/client';
 import { LedgerPicker } from '../popup/LedgerPicker';
 import { MSG_SOURCE, genId } from '../types/messages';
 import '../popup/styles.css';
+import { initTheme } from '../popup/theme';
+
+initTheme();
 
 const requestId = new URLSearchParams(window.location.search).get('id') ?? '';
 

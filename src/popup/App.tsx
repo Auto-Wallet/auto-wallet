@@ -11,6 +11,9 @@ import { AddressBookPage } from './pages/AddressBookPage';
 import { AccountMenu } from './pages/AccountMenu';
 import { AccountBadge } from './AccountBadge';
 import type { AccountSource } from '../lib/key-manager.core';
+import {
+  SettingsIcon, ChevronDownIcon, WalletIcon, ShieldCheckIcon, BookIcon, LinkIcon, ScrollIcon,
+} from './icons';
 
 type Page = 'loading' | 'setup' | 'unlock' | 'account' | 'whitelist' | 'addressBook' | 'networks' | 'txlog' | 'settings';
 
@@ -23,22 +26,13 @@ interface AccountInfo {
   derivationPath?: string;
 }
 
-const NAV_ITEMS: { page: Page; label: string }[] = [
-  { page: 'account', label: 'Wallet' },
-  { page: 'whitelist', label: 'Rules' },
-  { page: 'addressBook', label: 'Book' },
-  { page: 'networks', label: 'Chains' },
-  { page: 'txlog', label: 'Log' },
+const NAV_ITEMS: { page: Page; label: string; Icon: React.ComponentType<{ size?: number }> }[] = [
+  { page: 'account',     label: 'Wallet', Icon: WalletIcon },
+  { page: 'whitelist',   label: 'Rules',  Icon: ShieldCheckIcon },
+  { page: 'addressBook', label: 'Book',   Icon: BookIcon },
+  { page: 'networks',    label: 'Chains', Icon: LinkIcon },
+  { page: 'txlog',       label: 'Log',    Icon: ScrollIcon },
 ];
-
-function SettingsIcon({ size = 18 }: { size?: number }) {
-  return (
-    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-      <path d="M9.671 4.136a2.34 2.34 0 0 1 4.659 0a2.34 2.34 0 0 0 3.319 1.915a2.34 2.34 0 0 1 2.33 4.033a2.34 2.34 0 0 0 0 3.831a2.34 2.34 0 0 1-2.33 4.033a2.34 2.34 0 0 0-3.319 1.915a2.34 2.34 0 0 1-4.659 0a2.34 2.34 0 0 0-3.32-1.915a2.34 2.34 0 0 1-2.33-4.033a2.34 2.34 0 0 0 0-3.831A2.34 2.34 0 0 1 6.35 6.051a2.34 2.34 0 0 0 3.319-1.915" />
-      <circle cx="12" cy="12" r="3" />
-    </svg>
-  );
-}
 
 export default function App() {
   const [page, setPage] = useState<Page>('loading');
@@ -102,7 +96,7 @@ export default function App() {
                   {activeAccount?.label ?? 'Account'}
                 </span>
                 <span className="account-trigger-addr">{shortAddr}</span>
-                <span className="account-trigger-chevron">&#9662;</span>
+                <ChevronDownIcon size={10} className="account-trigger-chevron" />
               </button>
               {showAccountMenu && (
                 <AccountMenu
@@ -117,19 +111,21 @@ export default function App() {
               title="Settings"
               aria-label="Settings"
             >
-              <SettingsIcon />
+              <SettingsIcon size={15} />
             </button>
           </div>
 
           {/* Row 2: Navigation tabs */}
           <nav className="header-row-nav">
-            {NAV_ITEMS.map((item) => (
+            {NAV_ITEMS.map(({ page: p, label, Icon }) => (
               <button
-                key={item.page}
-                onClick={() => nav(item.page)}
-                className={`nav-tab ${page === item.page ? 'active' : ''}`}
+                key={p}
+                onClick={() => nav(p)}
+                className={`nav-tab ${page === p ? 'active' : ''}`}
+                aria-label={label}
               >
-                {item.label}
+                <span className="nav-tab-icon"><Icon size={14} /></span>
+                <span className="nav-tab-label">{label}</span>
               </button>
             ))}
           </nav>
@@ -140,7 +136,11 @@ export default function App() {
         {page === 'loading' && <div className="loading-page"><div className="spinner" /></div>}
         {page === 'setup' && <SetupPage onDone={() => nav('account')} />}
         {page === 'unlock' && <UnlockPage onUnlock={() => nav('account')} />}
-        {page === 'account' && <AccountPage key={activeAccount?.id ?? 'none'} onLock={() => nav('unlock')} />}
+        {page === 'account' && (
+          activeAccount
+            ? <AccountPage key={activeAccount.id} onLock={() => nav('unlock')} />
+            : <div className="loading-page"><div className="spinner" /></div>
+        )}
         {page === 'whitelist' && <WhitelistPage />}
         {page === 'addressBook' && <AddressBookPage />}
         {page === 'networks' && <NetworkPage />}

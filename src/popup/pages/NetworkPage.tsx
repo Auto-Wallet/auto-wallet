@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { callBackground } from '../api';
 import type { Network } from '../../types/network';
+import { SearchIcon, CloseIcon } from '../icons';
 
 export function NetworkPage() {
   const [networks, setNetworks] = useState<Network[]>([]);
@@ -107,7 +108,7 @@ export function NetworkPage() {
 
       {/* Search */}
       <div className="search-box">
-        <span className="search-icon">&#8981;</span>
+        <SearchIcon size={14} className="search-icon" />
         <input
           className="search-input"
           placeholder="Search by name, symbol, or chain ID..."
@@ -115,7 +116,9 @@ export function NetworkPage() {
           onChange={(e) => setSearch(e.target.value)}
         />
         {search && (
-          <button onClick={() => setSearch('')} className="search-clear">&times;</button>
+          <button onClick={() => setSearch('')} className="search-clear" aria-label="Clear search">
+            <CloseIcon size={14} />
+          </button>
         )}
       </div>
 
