@@ -21,8 +21,10 @@ export function initTheme(): void {
   });
 
   chrome.storage.onChanged.addListener((changes, area) => {
-    if (area !== 'local' || !changes[STORAGE_KEYS.SETTINGS]) return;
-    const next = changes[STORAGE_KEYS.SETTINGS].newValue as { theme?: ThemePreference } | undefined;
+    if (area !== 'local') return;
+    const change = changes[STORAGE_KEYS.SETTINGS];
+    if (!change) return;
+    const next = change.newValue as { theme?: ThemePreference } | undefined;
     applyTheme(next?.theme ?? 'auto');
   });
 }

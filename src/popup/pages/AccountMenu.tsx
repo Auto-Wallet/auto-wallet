@@ -2,6 +2,7 @@ import React, { useMemo, useState, useEffect } from 'react';
 import { callBackground } from '../api';
 import { AccountBadge } from '../AccountBadge';
 import { partitionAccountsForDisplay, type AccountSource, type AccountType } from '../../lib/key-manager.core';
+import { DeleteDangerModal } from '../DeleteDangerModal';
 
 interface AccountInfo {
   id: string;
@@ -27,6 +28,7 @@ export function AccountMenu({ onSwitch, onClose }: { onSwitch: () => void; onClo
   const [editLabel, setEditLabel] = useState('');
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [confirmRemoveId, setConfirmRemoveId] = useState<string | null>(null);
+  const [dangerRemoveAccount, setDangerRemoveAccount] = useState<AccountInfo | null>(null);
   const [accountQuery, setAccountQuery] = useState('');
 
   useEffect(() => { load(); }, []);
@@ -98,17 +100,34 @@ export function AccountMenu({ onSwitch, onClose }: { onSwitch: () => void; onClo
     load();
   }
 
-  async function handleRemove(id: string) {
-    if (confirmRemoveId !== id) {
-      setConfirmRemoveId(id);
-      return;
-    }
+  /** Hardware-backed (Ledger) and watch-only accounts have no private key on
+   *  this device, so the irreversible-key-loss warning does not apply. */
+  function isLowRiskRemoval(source: AccountSource) {
+    return source === 'ledger' || source === 'watchOnly';
+  }
+
+  async function executeRemove(id: string) {
     try {
       await callBackground('removeAccount', { accountId: id });
       setConfirmRemoveId(null);
+      setDangerRemoveAccount(null);
       if (id === activeId) onSwitch();
       else load();
     } catch (e: any) { setError(e.message); }
+  }
+
+  async function handleRemove(a: AccountInfo) {
+    if (isLowRiskRemoval(a.source)) {
+      // Keep the existing two-click inline confirm for Ledger / watch-only.
+      if (confirmRemoveId !== a.id) {
+        setConfirmRemoveId(a.id);
+        return;
+      }
+      await executeRemove(a.id);
+      return;
+    }
+    // Private-key or mnemonic-derived account → open the 3-step danger modal.
+    setDangerRemoveAccount(a);
   }
 
   async function handleCopy(id: string, address: string) {
@@ -176,9 +195,9 @@ export function AccountMenu({ onSwitch, onClose }: { onSwitch: () => void; onClo
               <button onClick={(e) => { e.stopPropagation(); setEditingId(a.id); setEditLabel(a.label); }}
                 className="btn-ghost" style={{ fontSize: 9, padding: '2px 4px' }}>Rename</button>
               {accounts.length > 1 && (
-                <button onClick={(e) => { e.stopPropagation(); handleRemove(a.id); }}
+                <button onClick={(e) => { e.stopPropagation(); handleRemove(a); }}
                   className="btn-ghost danger" style={{ fontSize: 9, padding: '2px 4px' }}>
-                  {confirmRemoveId === a.id ? 'Confirm' : 'Del'}
+                  {confirmRemoveId === a.id && isLowRiskRemoval(a.source) ? 'Confirm' : 'Del'}
                 </button>
               )}
             </div>
@@ -272,6 +291,15 @@ export function AccountMenu({ onSwitch, onClose }: { onSwitch: () => void; onClo
       <div className="account-menu-section" style={{ borderBottom: 'none' }}>
         <button onClick={handleLock} className="account-menu-lock-btn">Lock Wallet</button>
       </div>
+
+      <DeleteDangerModal
+        open={dangerRemoveAccount !== null}
+        title={`Delete "${dangerRemoveAccount?.label ?? ''}"?`}
+        subject="this account"
+        destructiveLabel="Delete account"
+        onCancel={() => setDangerRemoveAccount(null)}
+        onConfirm={() => { if (dangerRemoveAccount) void executeRemove(dangerRemoveAccount.id); }}
+      />
     </div>
   );
 }
