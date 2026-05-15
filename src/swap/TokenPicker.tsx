@@ -1,17 +1,17 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { CloseIcon, SearchIcon, StarIcon } from '../popup/icons';
-import { isEvmChain, type XfChain, type XfToken } from '../lib/xflows';
+import { isEvmChainId, type MergedChain, type MergedToken, type ProviderId } from '../lib/swap';
 import { callBackground } from '../popup/api';
 
 export interface PickerSelection {
   chainId: number;
-  token: XfToken;
+  token: MergedToken;
 }
 
 interface Props {
   title: string;
-  chains: XfChain[];
-  tokensByChain: Map<number, XfToken[]>;
+  chains: MergedChain[];
+  tokensByChain: Map<number, MergedToken[]>;
   /** When provided, restrict chains to this list. */
   allowedChainIds?: Set<number>;
   /**
@@ -80,9 +80,9 @@ export function TokenPicker({
   const visibleChains = useMemo(() => {
     const q = chainQuery.trim().toLowerCase();
     return chains
-      .filter((c) => isEvmChain(c.chainId))
+      .filter((c) => isEvmChainId(c.chainId))
       .filter((c) => !allowedChainIds || allowedChainIds.has(c.chainId))
-      .filter((c) => !q || c.chainName.toLowerCase().includes(q));
+      .filter((c) => !q || c.name.toLowerCase().includes(q));
   }, [chains, chainQuery, allowedChainIds]);
 
   const starredChains = useMemo(() => {
@@ -93,27 +93,27 @@ export function TokenPicker({
   const azChains = useMemo(() => {
     return [...visibleChains]
       .filter((c) => !starred.has(c.chainId))
-      .sort((a, b) => a.chainName.localeCompare(b.chainName));
+      .sort((a, b) => a.name.localeCompare(b.name));
   }, [visibleChains, starred]);
 
-  const visibleTokens = useMemo<{ chainId: number; chainName: string; token: XfToken }[]>(() => {
+  const visibleTokens = useMemo<{ chainId: number; chainName: string; token: MergedToken }[]>(() => {
     const q = tokenQuery.trim().toLowerCase();
     const isAddrSearch = q.startsWith('0x') && q.length >= 6;
     const chainsToShow = selectedChainId === ALL_CHAINS
       ? visibleChains
       : visibleChains.filter((c) => c.chainId === selectedChainId);
 
-    const out: { chainId: number; chainName: string; token: XfToken }[] = [];
+    const out: { chainId: number; chainName: string; token: MergedToken }[] = [];
     for (const c of chainsToShow) {
       const tokens = tokensByChain.get(c.chainId) ?? [];
       for (const t of tokens) {
         if (q) {
-          const matchAddr = isAddrSearch && t.tokenContractAddress.toLowerCase().includes(q);
-          const matchSymbol = t.tokenSymbol.toLowerCase().includes(q);
-          const matchName = t.tokenName.toLowerCase().includes(q);
+          const matchAddr = isAddrSearch && t.address.toLowerCase().includes(q);
+          const matchSymbol = t.symbol.toLowerCase().includes(q);
+          const matchName = t.name.toLowerCase().includes(q);
           if (!matchAddr && !matchSymbol && !matchName) continue;
         }
-        out.push({ chainId: c.chainId, chainName: c.chainName, token: t });
+        out.push({ chainId: c.chainId, chainName: c.name, token: t });
       }
     }
     return out;
@@ -143,10 +143,7 @@ export function TokenPicker({
           {
             chainId: selectedChainId,
             owner: ownerAddress,
-            tokens: tokens.map((t) => ({
-              address: t.tokenContractAddress,
-              decimals: Number(t.decimals),
-            })),
+            tokens: tokens.map((t) => ({ address: t.address, decimals: t.decimals })),
           },
         );
         if (cancelled) return;
@@ -168,7 +165,7 @@ export function TokenPicker({
     return () => { cancelled = true; };
   }, [selectedChainId, tokensByChain, showBalances, ownerAddress]);
 
-  function renderChainRow(c: XfChain) {
+  function renderChainRow(c: MergedChain) {
     const active = c.chainId === selectedChainId;
     const isStarred = starred.has(c.chainId);
     return (
@@ -178,8 +175,9 @@ export function TokenPicker({
           className="tp-chain-row-main"
           onClick={() => setSelectedChainId(c.chainId)}
         >
-          <ChainLogo logo={c.logo} symbol={c.symbol} size={20} />
-          <span className="tp-chain-name">{c.chainName}</span>
+          <ChainLogo logo={c.logo} symbol={c.nativeSymbol || c.name} size={20} />
+          <span className="tp-chain-name">{c.name}</span>
+          <ProviderBadges providers={c.providers} compact />
         </button>
         <button
           type="button"
@@ -263,35 +261,36 @@ export function TokenPicker({
                 <div className="tp-empty">No tokens match your search.</div>
               ) : (
                 visibleTokens.slice(0, 200).map(({ chainId, chainName, token }) => {
-                  const key = `${chainId}:${token.tokenContractAddress.toLowerCase()}`;
+                  const key = `${chainId}:${token.address.toLowerCase()}`;
                   const bal = balances.get(key);
                   return (
                     <button
-                      key={`${chainId}:${token.tokenContractAddress}`}
+                      key={`${chainId}:${token.address}`}
                       type="button"
                       className="tp-token-row"
                       onClick={() => onPick({ chainId, token })}
                     >
                       <div className="tp-token-icon-wrap">
-                        <TokenLogo url={token.tokenLogoUrl} symbol={token.tokenSymbol} size={32} />
+                        <TokenLogo url={token.logo} symbol={token.symbol} size={32} />
                       </div>
                       <div className="tp-token-info">
-                        <div className="tp-token-symbol">{token.tokenSymbol}</div>
+                        <div className="tp-token-symbol-row">
+                          <span className="tp-token-symbol">{token.symbol}</span>
+                          <ProviderBadges providers={token.providers} compact />
+                        </div>
                         <div className="tp-token-sub">
                           <span>{chainName}</span>
-                          <span className="tp-token-addr">
-                            {shortAddress(token.asciiTokenAddress ?? token.tokenContractAddress)}
-                          </span>
+                          <span className="tp-token-addr">{shortAddress(token.address)}</span>
                         </div>
                       </div>
                       <div className="tp-token-right">
                         {bal ? (
                           <>
                             <div className="tp-token-balance">{formatBalance(bal.formatted)}</div>
-                            <div className="tp-token-balance-sub">{token.tokenSymbol}</div>
+                            <div className="tp-token-balance-sub">{token.symbol}</div>
                           </>
                         ) : (
-                          <span className="tp-token-balance-empty">{' '}</span>
+                          <span className="tp-token-balance-empty">{' '}</span>
                         )}
                       </div>
                     </button>
@@ -303,6 +302,28 @@ export function TokenPicker({
         </div>
       </div>
     </div>
+  );
+}
+
+function ProviderBadges({ providers, compact }: { providers: ProviderId[]; compact?: boolean }) {
+  // Two dot-badges, "X" + "R". The dim variant means the provider doesn't
+  // support this chain/token. Hover title spells it out.
+  const has = (id: ProviderId) => providers.includes(id);
+  return (
+    <span className={`tp-provider-badges ${compact ? 'is-compact' : ''}`}>
+      <span
+        className={`tp-provider-dot is-x ${has('xflows') ? 'is-on' : ''}`}
+        title={has('xflows') ? 'Supported by XFlows' : 'Not on XFlows'}
+      >
+        X
+      </span>
+      <span
+        className={`tp-provider-dot is-r ${has('relay') ? 'is-on' : ''}`}
+        title={has('relay') ? 'Supported by Relay' : 'Not on Relay'}
+      >
+        R
+      </span>
+    </span>
   );
 }
 
@@ -369,4 +390,3 @@ function formatBalance(s: string): string {
   if (n >= 0.0001) return n.toFixed(6).replace(/\.?0+$/, '');
   return n.toExponential(2);
 }
-
