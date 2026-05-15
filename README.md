@@ -50,6 +50,17 @@ Dimensions combine with AND logic. Gas limit and value caps are always enforced 
 - Header dropdown for quick switching, renaming, and deleting accounts
 - Export private keys with password verification
 
+### Ledger Hardware Wallet
+
+- Talks to the device directly over **WebHID** (no Ledger Live bridge required)
+- Signs all three primitives: `eth_sendTransaction`, `personal_sign`, and EIP-712 `eth_signTypedData_v4`
+- Both derivation-path standards supported, switchable per-import:
+  - **Ledger Live** — `m/44'/60'/x'/0/0`
+  - **Legacy / MEW** — `m/44'/60'/0'/x`
+- Address selection UI scans the first N accounts on the chosen path so you can pick the one already funded
+- Pairs cleanly with watch-only accounts for a hot/cold split: monitor balances in the browser, sign with the device
+- Built on `@ledgerhq/hw-transport-webhid` + `@ledgerhq/hw-app-eth` — see [`src/lib/ledger.ts`](src/lib/ledger.ts)
+
 ### Token Support
 
 - Add custom ERC-20 tokens by contract address (auto-fetches symbol & decimals)
@@ -57,12 +68,83 @@ Dimensions combine with AND logic. Gas limit and value caps are always enforced 
 - Send native tokens and ERC-20 tokens directly from the wallet
 - Per-chain token lists with balance display
 
+### Built-in Cross-Chain Swap
+
+The popup ships a dedicated **Swap** tab that aggregates cross-chain quotes
+through the [xflows.wanchain.org/api/v3](https://xflows.wanchain.org/api/v3)
+service — no tab-hopping to a separate bridge dApp, no signing on an
+unfamiliar origin.
+
+End-to-end inside the popup:
+
+| Step | What the popup does | xflows endpoint |
+|---|---|---|
+| 1 | Fetch supported source/dest chains & tokens | `GET /supported/chains`, `GET /supported/tokens` |
+| 2 | Quote with live USD value, fee breakdown, route, ETA | `POST /quote` |
+| 3 | Build the source-chain transaction (calldata + value + gas) | `POST /buildTx` |
+| 4 | **USDT-style allowance reset** — `approve(0)` before re-approving on legacy tokens (per CLAUDE.md rule) | n/a (local helper) |
+| 5 | Sign with the active account (private key, mnemonic, or **Ledger**) | n/a (local) |
+| 6 | Poll until destination tx mines, surface explorer links for both legs | `GET /status` |
+
+The integration lives in [`src/lib/xflows.ts`](src/lib/xflows.ts); the swap UI
+is under [`src/swap/`](src/swap/) (`SwapPage.tsx`, `TokenPicker.tsx`,
+`index.tsx`). All requests target `https://xflows.wanchain.org/api/v3` directly
+— no proprietary backend.
+
 ### Network Management
 
-- 6 pre-configured chains: Ethereum, Polygon, Arbitrum, Optimism, BNB Chain, Avalanche
+- **31 chains preloaded out of the box** — 22 mainnets + 9 testnets, seeded on first install
 - Add unlimited custom EVM networks
 - Search & filter by name, symbol, or chain ID
 - dApp-triggered chain addition with user confirmation + HTTPS validation
+
+<details>
+<summary><strong>Full preloaded chain list</strong> (click to expand)</summary>
+
+#### Mainnets (22)
+
+| Chain | Chain ID | Native | Explorer |
+|---|---:|---|---|
+| Ethereum | `1` | ETH | [etherscan.io](https://etherscan.io) |
+| Polygon | `137` | POL | [polygonscan.com](https://polygonscan.com) |
+| Polygon zkEVM | `1101` | ETH | [zkevm.polygonscan.com](https://zkevm.polygonscan.com) |
+| BNB Smart Chain | `56` | BNB | [bscscan.com](https://bscscan.com) |
+| Arbitrum One | `42161` | ETH | [arbiscan.io](https://arbiscan.io) |
+| Arbitrum Nova | `42170` | ETH | [nova.arbiscan.io](https://nova.arbiscan.io) |
+| Optimism | `10` | ETH | [optimistic.etherscan.io](https://optimistic.etherscan.io) |
+| Base | `8453` | ETH | [basescan.org](https://basescan.org) |
+| Avalanche C-Chain | `43114` | AVAX | [snowtrace.io](https://snowtrace.io) |
+| Fantom | `250` | FTM | [ftmscan.com](https://ftmscan.com) |
+| Gnosis | `100` | xDAI | [gnosisscan.io](https://gnosisscan.io) |
+| Linea | `59144` | ETH | [lineascan.build](https://lineascan.build) |
+| zkSync Era | `324` | ETH | [explorer.zksync.io](https://explorer.zksync.io) |
+| Scroll | `534352` | ETH | [scrollscan.com](https://scrollscan.com) |
+| Mantle | `5000` | MNT | [explorer.mantle.xyz](https://explorer.mantle.xyz) |
+| Celo | `42220` | CELO | [celoscan.io](https://celoscan.io) |
+| Moonbeam | `1284` | GLMR | [moonscan.io](https://moonscan.io) |
+| Moonriver | `1285` | MOVR | [moonriver.moonscan.io](https://moonriver.moonscan.io) |
+| Cronos | `25` | CRO | [cronoscan.com](https://cronoscan.com) |
+| Blast | `81457` | ETH | [blastscan.io](https://blastscan.io) |
+| Mode | `34443` | ETH | [explorer.mode.network](https://explorer.mode.network) |
+| Wanchain | `888` | WAN | [wanscan.org](https://www.wanscan.org) |
+
+#### Testnets (9)
+
+| Chain | Chain ID | Native | Explorer |
+|---|---:|---|---|
+| Ethereum Sepolia | `11155111` | ETH | [sepolia.etherscan.io](https://sepolia.etherscan.io) |
+| Ethereum Holesky | `17000` | ETH | [holesky.etherscan.io](https://holesky.etherscan.io) |
+| Polygon Amoy | `80002` | POL | [amoy.polygonscan.com](https://amoy.polygonscan.com) |
+| BSC Testnet | `97` | tBNB | [testnet.bscscan.com](https://testnet.bscscan.com) |
+| Arbitrum Sepolia | `421614` | ETH | [sepolia.arbiscan.io](https://sepolia.arbiscan.io) |
+| Optimism Sepolia | `11155420` | ETH | [sepolia-optimism.etherscan.io](https://sepolia-optimism.etherscan.io) |
+| Base Sepolia | `84532` | ETH | [sepolia.basescan.org](https://sepolia.basescan.org) |
+| Avalanche Fuji | `43113` | AVAX | [testnet.snowtrace.io](https://testnet.snowtrace.io) |
+| Wanchain Testnet | `999` | WAN | [testnet.wanscan.org](https://testnet.wanscan.org) |
+
+The canonical list lives in [`src/types/network.ts`](src/types/network.ts) (`PRESET_NETWORKS`). On a fresh install every entry is copied into the user's network storage; on upgrade, only chain IDs not previously seeded are added (so user-deleted networks stay deleted, user-edited entries are preserved).
+
+</details>
 
 ### Security
 
