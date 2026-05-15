@@ -184,6 +184,7 @@ export function AccountPage({ onLock }: { onLock: () => void }) {
   const [sendSuccess, setSendSuccess] = useState('');
   const [sendFee, setSendFee] = useState<FeeOverride | null>(null);
   const [selectedAddressBookId, setSelectedAddressBookId] = useState<string | null>(null);
+  const [recipientFocused, setRecipientFocused] = useState(false);
 
   // Add token
   const [showAddToken, setShowAddToken] = useState(false);
@@ -537,14 +538,19 @@ export function AccountPage({ onLock }: { onLock: () => void }) {
                 setSendTo(e.target.value);
                 setSelectedAddressBookId(null);
               }}
+              onFocus={() => setRecipientFocused(true)}
+              onBlur={() => setRecipientFocused(false)}
             />
-            {sendTo.trim() && sendMatches.length > 0 && selectedAddressBookId === null && (
+            {recipientFocused && sendTo.trim() && sendMatches.length > 0 && selectedAddressBookId === null && (
               <div className="address-suggestions">
                 {sendMatches.map((entry) => (
                   <button
                     key={entry.id}
                     type="button"
-                    onClick={() => selectAddressBookEntry(entry)}
+                    onMouseDown={(e) => {
+                      e.preventDefault();
+                      selectAddressBookEntry(entry);
+                    }}
                     className="address-suggestion"
                   >
                     <span className="address-suggestion-name">{entry.name}</span>
