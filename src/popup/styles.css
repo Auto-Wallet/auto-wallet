@@ -2091,6 +2091,35 @@ body:has(.confirm-shell) {
 }
 .toggle.on .toggle-knob { transform: translateX(16px); }
 
+/* --- Social links footer --- */
+.social-links {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 4px 0 8px;
+}
+.social-link {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: var(--bg-card);
+  border: 1px solid var(--border-subtle);
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: all .15s ease;
+  text-decoration: none;
+}
+.social-link:hover {
+  background: var(--accent-subtle);
+  border-color: var(--accent);
+  color: var(--accent);
+  transform: translateY(-1px);
+}
+
 /* --- Export Private Key --- */
 .export-account-btn {
   display: flex;

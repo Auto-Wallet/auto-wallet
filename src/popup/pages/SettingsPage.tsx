@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { callBackground } from '../api';
 import type { WalletSettings, ThemePreference } from '../../types/settings';
 import type { AccountSource, AccountType } from '../../lib/key-manager.core';
-import { SunIcon, MoonIcon, MonitorIcon } from '../icons';
+import { SunIcon, MoonIcon, MonitorIcon, GlobeIcon, XIcon, GithubIcon } from '../icons';
 import { DeleteDangerModal } from '../DeleteDangerModal';
 
 interface AccountInfo {
@@ -349,6 +349,39 @@ export function SettingsPage() {
         onCancel={() => setDangerOpen(false)}
         onConfirm={() => { setDangerOpen(false); void executeDeleteAll(); }}
       />
+
+      <div className="social-links">
+        <a
+          href="https://auto-wallet.nannan.app"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="social-link"
+          title="Website"
+          aria-label="Website"
+        >
+          <GlobeIcon size={16} />
+        </a>
+        <a
+          href="https://x.com/lolieatapple"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="social-link"
+          title="X (Twitter)"
+          aria-label="X (Twitter)"
+        >
+          <XIcon size={14} />
+        </a>
+        <a
+          href="https://github.com/Auto-Wallet/auto-wallet"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="social-link"
+          title="GitHub"
+          aria-label="GitHub"
+        >
+          <GithubIcon size={16} />
+        </a>
+      </div>
     </div>
   );
 }
